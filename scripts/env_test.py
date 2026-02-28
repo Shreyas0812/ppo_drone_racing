@@ -10,6 +10,6 @@ print("Sample observation:", obs)
 for _ in range(5):
     action = env.action_space.sample()
     obs, reward, done, truncated, info = env.step(action)
-    print(f"reward: {reward} done: {done} truncated: {truncated}")
+    print(f"reward: {reward:.3f} done: {done}")
 
 env.close()
