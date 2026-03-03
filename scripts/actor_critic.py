@@ -54,3 +54,19 @@ class ActorCritic(nn.Module):
         value = self.critic(obs).squeeze(-1)  # Get value estimate for the state
 
         return action, log_prob, value
+
+    def evaluate(self, obs, action):
+        """
+        Evaluate stored (obs, action) pairs with current policy weights. Used for computing loss during training.
+        """
+        mean = self.actor(obs)
+        std = self.log_std.exp()
+
+        dist = Normal(mean, std)
+
+        log_prob = dist.log_prob(action).sum(dim=-1)  # Log probability of the given action
+        value = self.critic(obs).squeeze(-1)  # Value estimate for the state
+
+        entropy = dist.entropy().sum(dim=-1)  # Entropy of the action distribution (for exploration)
+
+        return log_prob, entropy, value
