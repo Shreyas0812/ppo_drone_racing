@@ -15,7 +15,15 @@ class ActorCritic(nn.Module):
             nn.Linear(hidden[1], action_dim),
             nn.Tanh()  # Assuming action space is normalized between -1 and 1
         )
-        self.log_std = nn.Parameter(torch.zeros(action_dim))  # Learnable log std
+        self.log_std = nn.Parameter(torch.zeros(action_dim))  # Learnable log std -- a vector of 4 log-standard deviations for each action dimension (one per rotor command) 
+
+        """
+        log_std does not change with the observation, it is a fixed parameter that is learned during training through gradient updates. 
+
+        Together with actor mean, it defines a Gaussian policy. The mean is determined by the actor network based on the current observation, while the log_std is a constant that is optimized to find the right level of exploration (how much randomness in action selection) during training.
+ 
+        π(a|s) = N(μθ(s), e^σ)
+        """
 
         # Critic: obs -> state value
         self.critic = nn.Sequential(
