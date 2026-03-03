@@ -25,7 +25,7 @@ class ActorCritic(nn.Module):
         π(a|s) = N(μθ(s), e^σ)
         """
 
-        # Critic: obs -> state value
+        # Critic: obs -> state value -- estimates the value of being in a given state, output is a single scalar value V(s) - estimate of expected return from that state
         self.critic = nn.Sequential(
             nn.Linear(obs_dim, 256),
             nn.ELU(),
@@ -33,3 +33,7 @@ class ActorCritic(nn.Module):
             nn.ELU(),
             nn.Linear(128, 1)
         )
+
+        """
+        Higher capacity for critic because it needs to learn a more complex function (mapping from state to expected return) compared to the actor which only needs to learn the mean action.
+        """
