@@ -37,3 +37,20 @@ class ActorCritic(nn.Module):
         """
         Higher capacity for critic because it needs to learn a more complex function (mapping from state to expected return) compared to the actor which only needs to learn the mean action.
         """
+
+    def get_action(self, obs):
+        """
+        Returns action, log probability of the action, and value estimate for the given observation.
+        """
+        
+        mean = self.actor(obs)
+        std = self.log_std.exp()  # Convert log std to std
+
+        dist = Normal(mean, std)
+        action = dist.sample()  # Sample action from the distribution
+
+        log_prob = dist.log_prob(action).sum(dim=-1)  # Log probability of the sampled action
+
+        value = self.critic(obs).squeeze(-1)  # Get value estimate for the state
+
+        return action, log_prob, value
