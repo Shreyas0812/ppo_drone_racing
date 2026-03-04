@@ -27,4 +27,15 @@ def update(policy, optimizer, buffer, clip_epsilon=0.2, value_loss_coef=0.5, ent
             surr2 = ratio.clamp(1.0 - clip_epsilon, 1.0 + clip_epsilon) * advantages[minibatch_indices]
             policy_loss = -torch.min(surr1, surr2).mean()  # PPO objective (maximize the minimum of the two surrogate losses)
 
+            # Value function loss
+            value_loss = (values - returns[minibatch_indices]).pow(2).mean()
+
+            # Total loss   
+            loss = policy_loss + value_loss_coef * value_loss - entropy_coef * entropy.mean()
+
+            # Update the policy network
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=0.5)  # Gradient clipping for stability
+            optimizer.step()
             
