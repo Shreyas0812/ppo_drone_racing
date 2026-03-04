@@ -40,14 +40,21 @@ class RolloutBuffer:
         self.actions[self.ptr] = action
         self.rewards[self.ptr] = float(reward)
         self.dones[self.ptr] = float(done)
-        self.values[self.ptr] = value.squeeze() if hasattr(value, 'squeeze') else value
-        self.log_probs[self.ptr] = log_prob.squeeze() if hasattr(log_prob, 'squeeze') else log_prob
+        self.values[self.ptr] = value.detach().squeeze() if hasattr(value, 'detach') else value
+        self.log_probs[self.ptr] = log_prob.detach().squeeze() if hasattr(log_prob, 'detach') else log_prob
         self.ptr += 1
+
+        """
+         during rollout, get_action() is called outside any torch.no_grad() block, so value and log_prob are live nodes in the autograd graph. Storing them in the buffer carries that graph along. The first loss.backward() frees it — then epoch 2 tries to differentiate through the same freed graph and crashes.
+        
+        .detach() severs the tensor from its computation graph before storing, which is correct — these are reference values (old policy), not things we want to differentiate through.
+        """
     
     def compute_returns_and_advantages(self, last_value, gamma=0.99, lam=0.95):
         """
         Compute GAE advantages and returns for the stored trajectory. looks backward through the trajectory to compute advantages and returns based on rewards, values, and done flags.
         """
+        last_value = last_value.detach() if hasattr(last_value, 'detach') else last_value
         gae = 0
         for t in reversed(range(self.n_steps)):
             if t == self.n_steps - 1:
