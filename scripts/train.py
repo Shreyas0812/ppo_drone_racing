@@ -64,6 +64,10 @@ for iteration in range(max_iterations):
     """
     Two no_grad blocks — one around the rollout loop, one around the bootstrap value — because both are inference-only. 
     This stops PyTorch from building and storing computation graphs during collection, which saves memory proportional to n_steps (2048 steps here) and speeds up the rollout phase. 
+    
+    
+    torch.no-grad: It tells PyTorch: "don't build a computation graph for anything inside this block."
+    We don't need the graph during rollout because we're not doing backpropagation until the update phase.
     """
     
     buffer.compute_returns_and_advantages(last_value=last_value)
