@@ -49,13 +49,26 @@ max_iterations = 1000
 for iteration in range(max_iterations):
     # Collect experience
     obs, info = env.reset()
+    ep_len = 0
+    ep_lengths = []
     with torch.no_grad():
         for t in range(buffer.n_steps):
             action, log_prob, value = policy.get_action(obs)
             next_obs, reward, done, truncated, info = env.step(action)
 
             buffer.store(obs, action, reward, done, value, log_prob)
-            obs = next_obs if not bool(done) else env.reset()[0]
+            ep_len += 1
+
+            if bool(done):
+                ep_lengths.append(ep_len)
+                ep_len = 0
+                obs = env.reset()[0]
+            else:
+                obs = next_obs
+
+    """
+    Adding ep_len and ep_lengths to track episode lengths during training. This is useful for monitoring how long episodes last, which can indicate learning progress (e.g., longer episodes may suggest better performance in a task like hover). We reset ep_len at the end of each episode and append it to ep_lengths for logging purposes.
+    """
 
     # Compute returns and advantages - GAE
     with torch.no_grad():
@@ -83,13 +96,20 @@ for iteration in range(max_iterations):
     <0 => Critic is worse than predicting the mean return (very bad)
     """
 
+    """
+    mean_ep_len
+    -> Short and increasing: drone is surviving longer as it learns, which is the expected healthy pattern
+    -> Stuck at low number: drone is crashing early and policy not improving
+    -> Always equal to n_steps: episodes never terminate naturally; the environment's done signal may not be firing, or the hover task has no terminal condition
+    """
     # Update policy using PPO
     policy_loss, value_loss, entropy, approx_kl = update(policy, optimizer, buffer)
 
     # Logging
     if (iteration + 1) % 10 == 0:
         print(f"Iteration {iteration + 1}/{max_iterations} completed.")
-        print(f"mean reward: {buffer.rewards.mean():.3f} mean value: {buffer.values.mean():.3f} mean advantage: {buffer.advantages.mean():.3f}")
+        mean_ep_len = sum(ep_lengths) / len(ep_lengths) if ep_lengths else float('nan')
+        print(f"mean reward: {buffer.rewards.mean():.3f} mean value: {buffer.values.mean():.3f} mean advantage: {buffer.advantages.mean():.3f} mean_ep_len: {mean_ep_len:.1f}")
         print(f"policy_loss: {policy_loss:.4f}  value_loss: {value_loss:.4f}  entropy: {entropy:.4f}  approx_kl: {approx_kl:.4f}  explained_var: {explained_var:.4f}")
 
     buffer.clear()  # Clear buffer for the next iteration
