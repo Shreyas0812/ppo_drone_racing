@@ -6,7 +6,7 @@ from scripts.ppo import update
 from scripts.rollout_buffer import RolloutBuffer
 
 env = HoverAviary()
-obs, info = env.reset()\
+obs, info = env.reset()
 
 obs_dim = env.observation_space.shape[1]
 action_dim = env.action_space.shape[1]
@@ -25,10 +25,11 @@ for iteration in range(max_iterations):
         next_obs, reward, done, truncated, info = env.step(action)
 
         buffer.store(obs, action, reward, done, value, log_prob)
-        obs = next_obs if not done else env.reset()
+        obs = next_obs if not bool(done) else env.reset()[0]
 
     # Compute returns and advantages - GAE
-    buffer.compute_returns_and_advantages(last_value=policy.get_value(obs))  # Assuming episode ends at the end of the buffer
+    _, _, last_value = policy.get_action(obs)
+    buffer.compute_returns_and_advantages(last_value=last_value)
 
     # Update policy using PPO
     update(policy, optimizer, buffer)
