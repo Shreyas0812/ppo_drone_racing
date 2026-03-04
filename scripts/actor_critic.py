@@ -42,7 +42,7 @@ class ActorCritic(nn.Module):
         """
         Returns action, log probability of the action, and value estimate for the given observation.
         """
-        
+        obs = torch.as_tensor(obs, dtype=torch.float32)
         mean = self.actor(obs)
         std = self.log_std.exp()  # Convert log std to std
 
@@ -59,6 +59,7 @@ class ActorCritic(nn.Module):
         """
         Evaluate stored (obs, action) pairs with current policy weights. Used for computing loss during training.
         """
+        obs = torch.as_tensor(obs, dtype=torch.float32)
         mean = self.actor(obs)
         std = self.log_std.exp()
 

@@ -33,11 +33,9 @@ class RolloutBuffer:
         self.ptr = 0
     
     def store(self, obs, action, reward, done, value, log_prob):
-        # Squeeze the drone batch dimension (1, dim) -> (dim,)
-        if hasattr(obs, 'ndim') and obs.ndim > 1:
-            obs = obs.squeeze(0)
-        if hasattr(action, 'ndim') and action.ndim > 1:
-            action = action.squeeze(0)
+        # Convert to tensor and squeeze the drone batch dimension (1, dim) -> (dim,)
+        obs = torch.as_tensor(obs, dtype=torch.float32).squeeze(0)
+        action = torch.as_tensor(action, dtype=torch.float32).squeeze(0)
         self.obs[self.ptr] = obs
         self.actions[self.ptr] = action
         self.rewards[self.ptr] = float(reward)
