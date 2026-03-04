@@ -102,15 +102,22 @@ for iteration in range(max_iterations):
     -> Stuck at low number: drone is crashing early and policy not improving
     -> Always equal to n_steps: episodes never terminate naturally; the environment's done signal may not be firing, or the hover task has no terminal condition
     """
+
+    """
+    clip_frac
+    0.0 - 0.1: PPO updates are mostly within the clipping range, which is good for stable learning
+    >0.2 consistently: policy is changing too much during updates, which can lead to instability; consider reducing learning rate or number of epochs
+    ~0.0 consistently: policy is barely updating, which may indicate a learning rate that's too low or insufficient epochs or vanishing gradients
+    """
     # Update policy using PPO
-    policy_loss, value_loss, entropy, approx_kl = update(policy, optimizer, buffer)
+    policy_loss, value_loss, entropy, approx_kl, clip_frac = update(policy, optimizer, buffer)
 
     # Logging
     if (iteration + 1) % 10 == 0:
         print(f"Iteration {iteration + 1}/{max_iterations} completed.")
         mean_ep_len = sum(ep_lengths) / len(ep_lengths) if ep_lengths else float('nan')
         print(f"mean reward: {buffer.rewards.mean():.3f} mean value: {buffer.values.mean():.3f} mean advantage: {buffer.advantages.mean():.3f} mean_ep_len: {mean_ep_len:.1f}")
-        print(f"policy_loss: {policy_loss:.4f}  value_loss: {value_loss:.4f}  entropy: {entropy:.4f}  approx_kl: {approx_kl:.4f}  explained_var: {explained_var:.4f}")
+        print(f"policy_loss: {policy_loss:.4f}  value_loss: {value_loss:.4f}  entropy: {entropy:.4f}  approx_kl: {approx_kl:.4f}  clip_frac: {clip_frac:.3f}  explained_var: {explained_var:.4f}")
 
     buffer.clear()  # Clear buffer for the next iteration
 
