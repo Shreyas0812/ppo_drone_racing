@@ -1,4 +1,5 @@
 import os
+import time
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 from gym_pybullet_drones.envs import HoverAviary
@@ -8,7 +9,9 @@ from actor_critic import ActorCritic
 from ppo import update
 from rollout_buffer import RolloutBuffer
 
-env = HoverAviary()
+RENDER = True  # Set to True to open the PyBullet GUI
+
+env = HoverAviary(gui=RENDER)
 obs, info = env.reset()
 
 obs_dim = env.observation_space.shape[1]
@@ -29,6 +32,8 @@ for iteration in range(max_iterations):
 
         buffer.store(obs, action, reward, done, value, log_prob)
         obs = next_obs if not bool(done) else env.reset()[0]
+        if RENDER:
+            time.sleep(1 / 240)  # Pace to real-time (PyBullet default timestep)
 
     # Compute returns and advantages - GAE
     _, _, last_value = policy.get_action(obs)
