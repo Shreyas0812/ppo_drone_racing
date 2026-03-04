@@ -7,7 +7,7 @@ def update(policy, optimizer, buffer, clip_epsilon=0.2, value_loss_coef=0.5, ent
     batch_size = obs.size(0)
     minibatch_size = batch_size // n_minibatches
 
-    total_policy_loss, total_value_loss, total_entropy = 0.0, 0.0, 0.0
+    total_policy_loss, total_value_loss, total_entropy, total_kl = 0.0, 0.0, 0.0, 0.0
     n_updates = 0
 
     for epoch in range(n_epochs):
@@ -39,9 +39,16 @@ def update(policy, optimizer, buffer, clip_epsilon=0.2, value_loss_coef=0.5, ent
             torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=0.5)  # Gradient clipping for stability
             optimizer.step()
 
+            approx_kl = (old_log_probs[minibatch_indices] - log_probs).mean()
+
+            """
+            approx_kl tells you how much the policy shifted during each update. The rule of thumb: if it consistently exceeds 0.02, the policy is updating too aggressively — you'd want to reduce lr or n_epochs
+            """
+
             total_policy_loss += policy_loss.item()
             total_value_loss += value_loss.item()
             total_entropy += entropy.mean().item()
+            total_kl += approx_kl.item()
             n_updates += 1
 
-    return total_policy_loss / n_updates, total_value_loss / n_updates, total_entropy / n_updates
+    return total_policy_loss / n_updates, total_value_loss / n_updates, total_entropy / n_updates, total_kl / n_updates

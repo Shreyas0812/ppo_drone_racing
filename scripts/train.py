@@ -35,13 +35,13 @@ for iteration in range(max_iterations):
     buffer.compute_returns_and_advantages(last_value=last_value)
 
     # Update policy using PPO
-    policy_loss, value_loss, entropy = update(policy, optimizer, buffer)
+    policy_loss, value_loss, entropy, approx_kl = update(policy, optimizer, buffer)
 
     # Logging
     if (iteration + 1) % 10 == 0:
         print(f"Iteration {iteration + 1}/{max_iterations} completed.")
         print(f"mean reward: {buffer.rewards.mean():.3f} mean value: {buffer.values.mean():.3f} mean advantage: {buffer.advantages.mean():.3f}")
-        print(f"policy_loss: {policy_loss:.4f}  value_loss: {value_loss:.4f}  entropy: {entropy:.4f}")
+        print(f"policy_loss: {policy_loss:.4f}  value_loss: {value_loss:.4f}  entropy: {entropy:.4f}  approx_kl: {approx_kl:.4f}")
 
     buffer.clear()  # Clear buffer for the next iteration
 
