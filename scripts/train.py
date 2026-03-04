@@ -1,9 +1,9 @@
-from gym_pybullet_drones import HoverAviary
+from gym_pybullet_drones.envs import HoverAviary
 import torch
 
-from scripts.actor_critic import ActorCritic
-from scripts.ppo import update
-from scripts.rollout_buffer import RolloutBuffer
+from actor_critic import ActorCritic
+from ppo import update
+from rollout_buffer import RolloutBuffer
 
 env = HoverAviary()
 obs, info = env.reset()
