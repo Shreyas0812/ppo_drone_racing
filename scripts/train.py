@@ -121,4 +121,5 @@ for iteration in range(max_iterations):
 
     buffer.clear()  # Clear buffer for the next iteration
 
+torch.save(policy.state_dict(), "policy.pt")
 env.close()
