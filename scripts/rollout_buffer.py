@@ -33,12 +33,17 @@ class RolloutBuffer:
         self.ptr = 0
     
     def store(self, obs, action, reward, done, value, log_prob):
+        # Squeeze the drone batch dimension (1, dim) -> (dim,)
+        if hasattr(obs, 'ndim') and obs.ndim > 1:
+            obs = obs.squeeze(0)
+        if hasattr(action, 'ndim') and action.ndim > 1:
+            action = action.squeeze(0)
         self.obs[self.ptr] = obs
         self.actions[self.ptr] = action
-        self.rewards[self.ptr] = reward
-        self.dones[self.ptr] = done
-        self.values[self.ptr] = value
-        self.log_probs[self.ptr] = log_prob
+        self.rewards[self.ptr] = float(reward)
+        self.dones[self.ptr] = float(done)
+        self.values[self.ptr] = value.squeeze() if hasattr(value, 'squeeze') else value
+        self.log_probs[self.ptr] = log_prob.squeeze() if hasattr(log_prob, 'squeeze') else log_prob
         self.ptr += 1
     
     def compute_returns_and_advantages(self, last_value, gamma=0.99, lam=0.95):
