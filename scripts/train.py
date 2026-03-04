@@ -45,8 +45,18 @@ optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
 buffer = RolloutBuffer(n_steps=2048, obs_dim=obs_dim, action_dim=action_dim)
 
 max_iterations = 1000
+checkpoint_interval = 100  # Save every N iterations
+start_iteration = 0
 
-for iteration in range(max_iterations):
+# Resume from checkpoint if one exists
+if os.path.exists("checkpoint.pt"):
+    checkpoint = torch.load("checkpoint.pt")
+    policy.load_state_dict(checkpoint["policy"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
+    start_iteration = checkpoint["iteration"] + 1
+    print(f"Resuming from iteration {start_iteration}")
+
+for iteration in range(start_iteration, max_iterations):
     # Collect experience
     obs, info = env.reset()
     ep_len = 0
@@ -118,6 +128,13 @@ for iteration in range(max_iterations):
         mean_ep_len = sum(ep_lengths) / len(ep_lengths) if ep_lengths else float('nan')
         print(f"mean reward: {buffer.rewards.mean():.3f} mean value: {buffer.values.mean():.3f} mean advantage: {buffer.advantages.mean():.3f} mean_ep_len: {mean_ep_len:.1f}")
         print(f"policy_loss: {policy_loss:.4f}  value_loss: {value_loss:.4f}  entropy: {entropy:.4f}  approx_kl: {approx_kl:.4f}  clip_frac: {clip_frac:.3f}  explained_var: {explained_var:.4f}")
+
+    if (iteration + 1) % checkpoint_interval == 0:
+        torch.save({
+            "iteration": iteration,
+            "policy": policy.state_dict(),
+            "optimizer": optimizer.state_dict(),
+        }, "checkpoint.pt")
 
     buffer.clear()  # Clear buffer for the next iteration
 
