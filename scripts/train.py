@@ -49,15 +49,23 @@ max_iterations = 1000
 for iteration in range(max_iterations):
     # Collect experience
     obs, info = env.reset()
-    for t in range(buffer.n_steps):
-        action, log_prob, value = policy.get_action(obs)
-        next_obs, reward, done, truncated, info = env.step(action)
+    with torch.no_grad():
+        for t in range(buffer.n_steps):
+            action, log_prob, value = policy.get_action(obs)
+            next_obs, reward, done, truncated, info = env.step(action)
 
-        buffer.store(obs, action, reward, done, value, log_prob)
-        obs = next_obs if not bool(done) else env.reset()[0]
+            buffer.store(obs, action, reward, done, value, log_prob)
+            obs = next_obs if not bool(done) else env.reset()[0]
 
     # Compute returns and advantages - GAE
-    _, _, last_value = policy.get_action(obs)
+    with torch.no_grad():
+        _, _, last_value = policy.get_action(obs)
+
+    """
+    Two no_grad blocks — one around the rollout loop, one around the bootstrap value — because both are inference-only. 
+    This stops PyTorch from building and storing computation graphs during collection, which saves memory proportional to n_steps (2048 steps here) and speeds up the rollout phase. 
+    """
+    
     buffer.compute_returns_and_advantages(last_value=last_value)
 
     explained_var = 1 - (buffer.returns - buffer.values).var() / (buffer.returns.var() + 1e-8)
