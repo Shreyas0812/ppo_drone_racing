@@ -39,6 +39,10 @@ def update(policy, optimizer, buffer, clip_epsilon=0.2, value_loss_coef=0.5, ent
             torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=0.5)  # Gradient clipping for stability
             optimizer.step()
 
+            # Prevent log_std from drifting: caps std between exp(-2)=0.14 and exp(0.5)=1.65
+            with torch.no_grad():
+                policy.log_std.clamp_(-2.0, 0.5)
+
             approx_kl = (old_log_probs[minibatch_indices] - log_probs).mean()
             clip_frac = ((ratio - 1).abs() > clip_epsilon).float().mean()
 
