@@ -31,13 +31,16 @@ policy.eval() switches off any training-specific behavior (like dropout) — not
 obs, _ = env.reset()
 for step in range(5000):
     with torch.no_grad():
-        action, _, _ = policy.get_action(obs)
+        obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
+        action = policy.actor(obs_tensor)  # deterministic mean — no sampling noise
+
     obs, reward, done, truncated, _ = env.step(action.clamp(-1.0, 1.0))
 
     if step % 50 == 0:
         x, y, z = obs[0, 0], obs[0, 1], obs[0, 2]
         vx, vy, vz = obs[0, 3], obs[0, 4], obs[0, 5]
-        print(f"step {step:4d} | pos: ({x:.3f}, {y:.3f}, {z:.3f}) | vel: ({vx:.3f}, {vy:.3f}, {vz:.3f}) | reward: {reward:.3f}")
+        act = action.squeeze().tolist()
+        print(f"step {step:4d} | pos: ({x:.3f}, {y:.3f}, {z:.3f}) | vel: ({vx:.3f}, {vy:.3f}, {vz:.3f}) | reward: {reward:.3f} | action: [{act[0]:.2f}, {act[1]:.2f}, {act[2]:.2f}, {act[3]:.2f}]")
 
     if done:
         obs, _ = env.reset()
