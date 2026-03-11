@@ -10,7 +10,12 @@ obs_dim = env.observation_space.shape[1]
 action_dim = env.action_space.shape[1]
 
 policy = ActorCritic(obs_dim, action_dim)
-policy.load_state_dict(torch.load("policy.pt"))
+if os.path.exists("policy.pt"):
+    policy.load_state_dict(torch.load("policy.pt"))
+else:
+    checkpoint = torch.load("checkpoint.pt")
+    policy.load_state_dict(checkpoint["policy"])
+    print(f"policy.pt not found, loaded checkpoint from iteration {checkpoint['iteration'] + 1}")
 
 
 """
@@ -27,7 +32,7 @@ obs, _ = env.reset()
 for _ in range(5000):
     with torch.no_grad():
         action, _, _ = policy.get_action(obs)
-    obs, reward, done, truncated, _ = env.step(action)
+    obs, reward, done, truncated, _ = env.step(action.clamp(-1.0, 1.0))
     if done:
         obs, _ = env.reset()
 
