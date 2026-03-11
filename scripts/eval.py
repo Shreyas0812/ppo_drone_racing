@@ -5,7 +5,7 @@ from gym_pybullet_drones.envs import HoverAviary
 import torch
 from actor_critic import ActorCritic
 
-env = HoverAviary(gui=True, record=False)
+env = HoverAviary(gui=False, record=True)
 obs_dim = env.observation_space.shape[1]
 action_dim = env.action_space.shape[1]
 
