@@ -42,7 +42,8 @@ for step in range(5000):
         act = action.squeeze().tolist()
         print(f"step {step:4d} | pos: ({x:.3f}, {y:.3f}, {z:.3f}) | vel: ({vx:.3f}, {vy:.3f}, {vz:.3f}) | reward: {reward:.3f} | action: [{act[0]:.2f}, {act[1]:.2f}, {act[2]:.2f}, {act[3]:.2f}]")
 
-    if done:
+    crashed = float(obs[0, 2]) < 0.05
+    if done or crashed:
         obs, _ = env.reset()
 
 """

@@ -74,7 +74,8 @@ for iteration in range(start_iteration, max_iterations):
             buffer.store(obs, action, reward, done, value, log_prob)  # store unclipped action for consistent log_prob
             ep_len += 1
 
-            if bool(done):
+            crashed = altitude < 0.05  # drone tipped over or hit the ground
+            if bool(done) or crashed:
                 ep_lengths.append(ep_len)
                 ep_len = 0
                 obs = env.reset()[0]
