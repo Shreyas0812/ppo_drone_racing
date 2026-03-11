@@ -64,9 +64,14 @@ for iteration in range(start_iteration, max_iterations):
     with torch.no_grad():
         for t in range(buffer.n_steps):
             action, log_prob, value = policy.get_action(obs)
-            next_obs, reward, done, truncated, info = env.step(action)
+            next_obs, reward, done, truncated, info = env.step(action.clamp(-1.0, 1.0))
+            
+            altitude = float(next_obs[0, 2])  # z-axis is at index 2
+            upward_velocity = float(next_obs[0, 5])  # vz is at index 5
+            
+            reward = reward + 0.1 * altitude + 0.3 * max(0.0, upward_velocity)  # altitude + upward velocity shaping
 
-            buffer.store(obs, action, reward, done, value, log_prob)
+            buffer.store(obs, action, reward, done, value, log_prob)  # store unclipped action for consistent log_prob
             ep_len += 1
 
             if bool(done):
