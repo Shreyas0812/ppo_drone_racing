@@ -5,7 +5,7 @@ from gym_pybullet_drones.envs import HoverAviary
 import torch
 from actor_critic import ActorCritic
 
-env = HoverAviary(gui=False, record=True)
+env = HoverAviary(gui=False, record=False)
 obs_dim = env.observation_space.shape[1]
 action_dim = env.action_space.shape[1]
 
@@ -29,10 +29,16 @@ policy.eval() switches off any training-specific behavior (like dropout) — not
 """
 
 obs, _ = env.reset()
-for _ in range(5000):
+for step in range(5000):
     with torch.no_grad():
         action, _, _ = policy.get_action(obs)
     obs, reward, done, truncated, _ = env.step(action.clamp(-1.0, 1.0))
+
+    if step % 50 == 0:
+        x, y, z = obs[0, 0], obs[0, 1], obs[0, 2]
+        vx, vy, vz = obs[0, 3], obs[0, 4], obs[0, 5]
+        print(f"step {step:4d} | pos: ({x:.3f}, {y:.3f}, {z:.3f}) | vel: ({vx:.3f}, {vy:.3f}, {vz:.3f}) | reward: {reward:.3f}")
+
     if done:
         obs, _ = env.reset()
 
