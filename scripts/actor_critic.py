@@ -8,6 +8,7 @@ class ActorCritic(nn.Module):
 
         # Actor: obs -> action mean
         self.actor = nn.Sequential(
+            nn.LayerNorm(obs_dim),
             nn.Linear(obs_dim, hidden[0]),
             nn.ELU(),
             nn.Linear(hidden[0], hidden[1]),
@@ -27,6 +28,7 @@ class ActorCritic(nn.Module):
 
         # Critic: obs -> state value -- estimates the value of being in a given state, output is a single scalar value V(s) - estimate of expected return from that state
         self.critic = nn.Sequential(
+            nn.LayerNorm(obs_dim),
             nn.Linear(obs_dim, 256),
             nn.ELU(),
             nn.Linear(256, 128),
