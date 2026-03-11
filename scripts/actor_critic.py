@@ -16,7 +16,11 @@ class ActorCritic(nn.Module):
             nn.Linear(hidden[1], action_dim),
             nn.Tanh()  # Assuming action space is normalized between -1 and 1
         )
-        self.log_std = nn.Parameter(torch.zeros(action_dim))  # Learnable log std -- a vector of 4 log-standard deviations for each action dimension (one per rotor command) 
+        self.log_std = nn.Parameter(torch.zeros(action_dim))  # Learnable log std -- a vector of 4 log-standard deviations for each action dimension (one per rotor command)
+
+        # Bias the actor toward positive thrust at init: Tanh(0.5) ≈ 0.46, so all motors start
+        # above neutral rather than random near-zero, preventing immediate flip/crash
+        nn.init.constant_(self.actor[-2].bias, 0.5)
 
         """
         log_std does not change with the observation, it is a fixed parameter that is learned during training through gradient updates. 
