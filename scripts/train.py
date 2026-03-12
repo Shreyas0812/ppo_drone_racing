@@ -44,7 +44,7 @@ policy = ActorCritic(obs_dim, action_dim)
 optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
 buffer = RolloutBuffer(n_steps=2048, obs_dim=obs_dim, action_dim=action_dim)
 
-max_iterations = 1000
+max_iterations = 2000
 checkpoint_interval = 100  # Save every N iterations
 start_iteration = 0
 
