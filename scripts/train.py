@@ -69,7 +69,8 @@ for iteration in range(start_iteration, max_iterations):
             altitude = float(next_obs[0, 2])  # z-axis is at index 2
             upward_velocity = float(next_obs[0, 5])  # vz is at index 5
             
-            reward = reward + 0.3 * altitude + 0.3 * max(0.0, upward_velocity)  # altitude + upward velocity shaping
+            # Reward shaping: add a bonus for being close to the target altitude (1.0) and for upward velocity when below target
+            reward = reward + 0.3 * min(altitude, 1.0) + (0.3 * max(0.0, upward_velocity) if altitude < 1.0 else 0.0)  
 
             buffer.store(obs, action, reward, done, value, log_prob)  # store unclipped action for consistent log_prob
             ep_len += 1
