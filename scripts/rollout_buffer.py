@@ -50,7 +50,7 @@ class RolloutBuffer:
         .detach() severs the tensor from its computation graph before storing, which is correct — these are reference values (old policy), not things we want to differentiate through.
         """
     
-    def compute_returns_and_advantages(self, last_value, gamma=0.99, lam=0.95):
+    def compute_returns_and_advantages(self, last_value, gamma=0.95, lam=0.95):
         """
         Compute GAE advantages and returns for the stored trajectory. looks backward through the trajectory to compute advantages and returns based on rewards, values, and done flags.
         """
