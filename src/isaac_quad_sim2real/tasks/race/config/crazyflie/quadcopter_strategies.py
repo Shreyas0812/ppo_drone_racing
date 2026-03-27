@@ -77,6 +77,10 @@ class DefaultQuadcopterStrategy:
         gate_passed = dist_to_gate < 0.1
         ids_gate_passed = torch.where(gate_passed)[0]
         self.env._idx_wp[ids_gate_passed] = (self.env._idx_wp[ids_gate_passed] + 1) % self.env._waypoints.shape[0]
+        gate_passed = False if ids_gate_passed.numel() == 0 else True
+        # if ids_gate_passed.numel() > 0:
+        #     for env_id in ids_gate_passed:
+        #         print(f"[Gate Passed] env={env_id.item():4d} → next gate={self.env._idx_wp[env_id].item()}")
 
         # set desired positions in the world frame
         self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
@@ -86,6 +90,10 @@ class DefaultQuadcopterStrategy:
         distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
         distance_to_goal = torch.tanh(distance_to_goal/3.0)
         progress = 1 - distance_to_goal  # distance_to_goal is between 0 and 1 where 0 means the drone reached the goal
+
+        # if (gate_passed):
+        #     for env_id in ids_gate_passed:
+        #         print(f"Progress: {progress.mean().item():.4f}, Distance to Goal: {distance_to_goal.mean().item():.4f}, Current Gate: {self.env._idx_wp[env_id].item()}")
 
         # compute crashed environments if contact detected for 100 timesteps
         contact_forces = self.env._contact_sensor.data.net_forces_w
@@ -97,6 +105,7 @@ class DefaultQuadcopterStrategy:
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
+                "passing_gate": self.env._idx_wp[env_id].item() * self.env.rew['passing_gate_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
             }
@@ -125,28 +134,29 @@ class DefaultQuadcopterStrategy:
 
         ##### Some example observations you may want to explore using
         # Angular velocities (referred to as body rates)
-        # drone_ang_vel_b = self.env._robot.data.root_ang_vel_b  # [roll_rate, pitch_rate, yaw_rate]
+        drone_ang_vel_b = self.env._robot.data.root_ang_vel_b  # [roll_rate, pitch_rate, yaw_rate]
 
         # Current target gate information
-        # current_gate_idx = self.env._idx_wp
-        # current_gate_pos_w = self.env._waypoints[current_gate_idx, :3]  # World position of current gate
-        # current_gate_yaw = self.env._waypoints[current_gate_idx, -1]    # Yaw orientation of current gate
+        current_gate_idx = self.env._idx_wp.unsqueeze(-1).float()       # [num_envs, 1]
+
+        current_gate_pos_w = self.env._waypoints[self.env._idx_wp, :3]  # World position of current gate [num_envs, 3]
+        current_gate_yaw = self.env._waypoints[self.env._idx_wp, -1].unsqueeze(-1)  # Yaw orientation [num_envs, 1]
 
         # Relative position to current gate in gate frame
         drone_pos_gate_frame = self.env._pose_drone_wrt_gate
 
         # Relative position to current gate in body frame
-        # gate_pos_b, _ = subtract_frame_transforms(
-        #     self.env._robot.data.root_link_pos_w,
-        #     self.env._robot.data.root_quat_w,
-        #     current_gate_pos_w
-        # )
+        gate_pos_b, _ = subtract_frame_transforms(
+            self.env._robot.data.root_link_pos_w,
+            self.env._robot.data.root_quat_w,
+            current_gate_pos_w
+        )
 
         # Previous actions
-        # prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
+        prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
 
         # Number of gates passed
-        # gates_passed = self.env._n_gates_passed.unsqueeze(1).float()
+        gates_passed = self.env._n_gates_passed.unsqueeze(1).float()
 
         # TODO ----- END -----
 
@@ -156,7 +166,11 @@ class DefaultQuadcopterStrategy:
                 drone_pose_w,       # position in the world frame (3 dims)
                 drone_lin_vel_b,    # velocity in the body frame (3 dims)
                 drone_quat_w,       # quaternion in the world frame (4 dims)
-                drone_pos_gate_frame
+                drone_ang_vel_b,    # angular velocity in the body frame (3 dims)
+                gate_pos_b,         # relative position to gate in body frame (3 dims)
+                prev_actions,       # previous actions (4 dims)
+                drone_pos_gate_frame,
+                gates_passed,       # number of gates passed (1 dim)
             ],
             # TODO ----- END -----
             dim=-1,
