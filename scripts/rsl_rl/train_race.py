@@ -10,7 +10,12 @@
 import sys
 import os
 
-local_rsl_path = os.path.abspath("src/third_parties/rsl_rl_local")
+# Ensure project root is on the path regardless of working directory
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+local_rsl_path = os.path.join(_project_root, "src/third_parties/rsl_rl_local")
 if os.path.exists(local_rsl_path):
     sys.path.insert(0, local_rsl_path)
     print(f"[INFO] Using local rsl_rl from: {local_rsl_path}")
