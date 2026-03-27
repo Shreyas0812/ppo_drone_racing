@@ -28,7 +28,7 @@ class PPO:
         gamma=0.998,
         lam=0.95,
         value_loss_coef=1.0,
-        entropy_coef=0.0,
+        entropy_coef=0.005,
         learning_rate=1e-3,
         max_grad_norm=1.0,
         use_clipped_value_loss=True,
@@ -153,6 +153,7 @@ class PPO:
             prev_log_probs = prev_log_probs.squeeze(-1)  # (batch_size, 1) to (batch_size,)
             advantage_estimates = advantage_estimates.squeeze(-1)  # (batch_size, 1) to (batch_size,)
             value_targets = value_targets.squeeze(-1)  # (batch_size, 1) to (batch_size,)
+            discounted_returns = discounted_returns.squeeze(-1)  # (batch_size, 1) to (batch_size,)
 
             # 0. Update the actor critic with the current batch of observations to get the new log probs, values and entropy
             self.actor_critic.act(observations)
@@ -171,11 +172,11 @@ class PPO:
             # 3. Value loss
             if self.use_clipped_value_loss:
                 value_pred_clipped = values + torch.clamp(values - value_targets, -self.clip_param, self.clip_param)
-                value_loss_clipped = (value_pred_clipped - value_targets).pow(2)
-                value_loss_unclipped = (values - value_targets).pow(2)
+                value_loss_clipped = (value_pred_clipped - discounted_returns).pow(2)
+                value_loss_unclipped = (values - discounted_returns).pow(2)
                 value_loss = 0.5 * torch.max(value_loss_unclipped, value_loss_clipped).mean()
             else:
-                value_loss = 0.5 * (values - value_targets).pow(2).mean()
+                value_loss = 0.5 * (values - discounted_returns).pow(2).mean()
 
             # 4. Total loss
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy.mean()
