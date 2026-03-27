@@ -149,19 +149,24 @@ class PPO:
             # TODO ----- START -----
             # Implement the PPO update step
 
+            # Shape Shenanigans:
+            prev_log_probs = prev_log_probs.squeeze(-1)  # (batch_size, 1) to (batch_size,)
+            advantage_estimates = advantage_estimates.squeeze(-1)  # (batch_size, 1) to (batch_size,)
+            value_targets = value_targets.squeeze(-1)  # (batch_size, 1) to (batch_size,)
+
             # 0. Update the actor critic with the current batch of observations to get the new log probs, values and entropy
-            self.actor_critic.act(observations, hidden_states)
+            self.actor_critic.act(observations)
 
             # 1. New log probs, values and entropy
             pre_step_log_probs = self.actor_critic.get_actions_log_prob(sampled_actions)
-            entropy = self.actor_critic.entropy()
+            entropy = self.actor_critic.entropy
             values = self.actor_critic.evaluate(critic_observations).squeeze(-1)
 
             # 2. Ratio for surrogate loss/policy loss
             ratio = torch.exp(pre_step_log_probs - prev_log_probs)
             surr1 = ratio * advantage_estimates
             surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * advantage_estimates
-            surrogate_loss = -torch.min(surr1, surr2).mean()    
+            surrogate_loss = -torch.min(surr1, surr2).mean()
 
             # 3. Value loss
             if self.use_clipped_value_loss:
@@ -182,7 +187,7 @@ class PPO:
             self.optimizer.step()
 
             with torch.no_grad():
-                self.actor_critic.act(observations, hidden_states) 
+                self.actor_critic.act(observations) 
                 post_step_log_probs = self.actor_critic.get_actions_log_prob(sampled_actions)
 
             # KL divergence for adaptive learning rate
@@ -197,7 +202,7 @@ class PPO:
                     self.learning_rate *= 1.5
                     for param_group in self.optimizer.param_groups:
                         param_group["lr"] = self.learning_rate
-            
+
             with torch.no_grad():
                 # 6. Update the old log probs with the new log probs for the next iteration
                 prev_log_probs.copy_(post_step_log_probs)
