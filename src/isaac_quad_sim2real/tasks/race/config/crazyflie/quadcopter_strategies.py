@@ -67,9 +67,7 @@ class DefaultQuadcopterStrategy:
 
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
-        according to the reward scales you tune in train_race.py. The following is an example reward structure that
-        causes the drone to hover near the zeroth gate. It will not produce a racing policy, but simply serves as proof
-        if your PPO implementation works. You should delete it or heavily modify it once you begin the racing task."""
+        according to the reward scales you tune in train_race.py. """
 
         # TODO ----- START ----- Define the tensors required for your custom reward structure
         # check to change waypoint
