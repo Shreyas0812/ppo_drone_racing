@@ -148,6 +148,70 @@ class PPO:
         ) in generator:
             # TODO ----- START -----
             # Implement the PPO update step
+
+            # 0. Update the actor critic with the current batch of observations to get the new log probs, values and entropy
+            self.actor_critic.act(observations, hidden_states)
+
+            # 1. New log probs, values and entropy
+            pre_step_log_probs = self.actor_critic.get_actions_log_prob(sampled_actions)
+            entropy = self.actor_critic.entropy()
+            values = self.actor_critic.evaluate(critic_observations).squeeze(-1)
+
+            # 2. Ratio for surrogate loss/policy loss
+            ratio = torch.exp(pre_step_log_probs - prev_log_probs)
+            surr1 = ratio * advantage_estimates
+            surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * advantage_estimates
+            surrogate_loss = -torch.min(surr1, surr2).mean()    
+
+            # 3. Value loss
+            if self.use_clipped_value_loss:
+                value_pred_clipped = values + torch.clamp(values - value_targets, -self.clip_param, self.clip_param)
+                value_loss_clipped = (value_pred_clipped - value_targets).pow(2)
+                value_loss_unclipped = (values - value_targets).pow(2)
+                value_loss = 0.5 * torch.max(value_loss_unclipped, value_loss_clipped).mean()
+            else:
+                value_loss = 0.5 * (values - value_targets).pow(2).mean()
+
+            # 4. Total loss
+            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy.mean()
+
+            # 5. Backprop and optimization step
+            self.optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+            self.optimizer.step()
+
+            with torch.no_grad():
+                self.actor_critic.act(observations, hidden_states) 
+                post_step_log_probs = self.actor_critic.get_actions_log_prob(sampled_actions)
+
+            # KL divergence for adaptive learning rate
+            if self.schedule == "adaptive":
+                with torch.no_grad():
+                    kl_divergence = (prev_log_probs - post_step_log_probs).mean().item()
+                if kl_divergence > 1.5 * self.desired_kl:
+                    self.learning_rate /= 1.5
+                    for param_group in self.optimizer.param_groups:
+                        param_group["lr"] = self.learning_rate
+                elif kl_divergence < self.desired_kl / 1.5:
+                    self.learning_rate *= 1.5
+                    for param_group in self.optimizer.param_groups:
+                        param_group["lr"] = self.learning_rate
+            
+            with torch.no_grad():
+                # 6. Update the old log probs with the new log probs for the next iteration
+                prev_log_probs.copy_(post_step_log_probs)
+                # 7. Update the old mean actions and action stds with the new ones for the next iteration
+                prev_mean_actions.copy_(self.actor_critic.action_mean)
+                prev_action_stds.copy_(self.actor_critic.action_std)
+
+
+
+            # Log the losses
+            mean_value_loss += value_loss.item()
+            mean_surrogate_loss += surrogate_loss.item()
+            mean_entropy += entropy.mean().item()
+
             # TODO ----- END -----
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
@@ -157,4 +221,5 @@ class PPO:
         # Clear the storage
         self.storage.clear()
 
+        
         return mean_value_loss, mean_surrogate_loss, mean_entropy
