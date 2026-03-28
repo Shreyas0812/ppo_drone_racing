@@ -308,9 +308,17 @@ class DefaultQuadcopterStrategy:
         # This example code initializes the drone 2m behind the first gate. You should delete it or heavily
         # modify it once you begin the racing task.
 
-        # start from a random waypoint so all gate approaches are trained equally
-        waypoint_indices = torch.randint(0, self.env._waypoints.shape[0], (n_reset,),
-                                         device=self.device, dtype=self.env._idx_wp.dtype)
+        # First we start from a single waypoint for some iterations so it learns the loop
+        # Then we randomize the starting waypoint so that the drone learns to approach gates from different angles and directions. 
+        # This also ensures that the drone does not overfit to the first gate and can generalize to the entire track.
+        learning_loop_iterations = 1500
+        use_random_start = hasattr(self.env, 'iteration') and self.env.iteration > learning_loop_iterations
+
+        if use_random_start:
+            waypoint_indices = torch.randint(0, self.env._waypoints.shape[0], (n_reset,),
+                                             device=self.device, dtype=self.env._idx_wp.dtype)
+        else:
+            waypoint_indices = torch.zeros(n_reset, device=self.device, dtype=self.env._idx_wp.dtype)
 
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
@@ -335,12 +343,18 @@ class DefaultQuadcopterStrategy:
         default_root_state[:, 1] = initial_y
         default_root_state[:, 2] = initial_z
 
+        # Forward momentum so powerloop is feasible right after spawn
+        forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.5, 2.5)
+        default_root_state[:, 7] = -forward_speed * cos_theta # world frame velocity in x direction
+        default_root_state[:, 8] = -forward_speed * sin_theta # world frame velocity in y direction
+        default_root_state[:, 9] = 0.0  # velocity in z direction
+
         # point drone towards the zeroth gate
         initial_yaw = torch.atan2(y0_wp - initial_y, x0_wp - initial_x)
         quat = quat_from_euler_xyz(
-            torch.zeros(1, device=self.device),
-            torch.zeros(1, device=self.device),
-            initial_yaw + torch.empty(1, device=self.device).uniform_(-0.15, 0.15)
+            torch.zeros(n_reset, device=self.device),
+            torch.zeros(n_reset, device=self.device),
+            initial_yaw + torch.empty(n_reset, device=self.device).uniform_(-0.15, 0.15)
         )
         default_root_state[:, 3:7] = quat
         # TODO ----- END -----
