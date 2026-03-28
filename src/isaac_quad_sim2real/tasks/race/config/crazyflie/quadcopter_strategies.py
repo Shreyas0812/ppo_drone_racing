@@ -80,7 +80,7 @@ class DefaultQuadcopterStrategy:
         # y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.4
         # z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.4
 
-        gate_passed = crossed_plane & (dist_to_gate < 0.4)
+        gate_passed = crossed_plane & (dist_to_gate < 0.7)
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
@@ -107,7 +107,9 @@ class DefaultQuadcopterStrategy:
         prev_distance_to_goal = self.env._last_distance_to_goal
         curr_distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
 
-        progress = prev_distance_to_goal - curr_distance_to_goal
+        # progress = prev_distance_to_goal - curr_distance_to_goal
+        progress = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / self.env.rew.get('progress_norm_scale', 0.05))
+
 
         self.env._last_distance_to_goal = curr_distance_to_goal.clone()
 
