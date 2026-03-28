@@ -70,6 +70,8 @@ class DefaultQuadcopterStrategy:
         according to the reward scales you tune in train_race.py. """
 
         # TODO ----- START ----- Define the tensors required for your custom reward structure
+        
+        ############################## Reward for passing through a gate and updating the waypoint and desired position accordingly ##############################
         # check to change waypoint
         x_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 0]
         y_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 1]
@@ -102,16 +104,35 @@ class DefaultQuadcopterStrategy:
         # distance_to_goal = torch.tanh(distance_to_goal/3.0)
         # progress = 1 - distance_to_goal  # distance_to_goal is between 0 and 1 where 0 means the drone reached the goal
 
+        ###################################################################################################################################################################
+
+        ####################################### Reward for progress towards the goal (current gate) ##############################
+
         self.env._last_distance_to_goal[ids_gate_passed] = torch.linalg.norm(self.env._desired_pos_w[ids_gate_passed] - self.env._robot.data.root_link_pos_w[ids_gate_passed], dim=1)
 
         prev_distance_to_goal = self.env._last_distance_to_goal
         curr_distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
 
         # progress = prev_distance_to_goal - curr_distance_to_goal
-        progress = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / self.env.rew.get('progress_norm_scale', 0.05))
+        progress_norm_scale = getattr(self.env, 'rew', {}).get('progress_norm_scale', 0.05)
+        progress = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
 
 
         self.env._last_distance_to_goal = curr_distance_to_goal.clone()
+
+        ###################################################################################################################################################################
+
+
+        ###################################### Reward for passing through a gate in the right yaw ##############################
+
+        yaw_angle_scale = getattr(self.env, 'rew', {}).get('yaw_angle_scale', 0.15)
+        _, _, drone_yaw = euler_xyz_from_quat(self.env._robot.data.root_quat_w)
+        yaw_diff = drone_yaw - self.env._waypoints[self.env._idx_wp, -1]
+        yaw_diff = (yaw_diff + np.pi) % (2 * np.pi) - np.pi  # Wrap to [-pi, pi]
+        yaw_reward = torch.exp(-yaw_diff**2 / (2 * (yaw_angle_scale**2)))  # Gaussian reward centered at 0 with std dev of 0.15 radians
+        
+
+        ###################################### Reward for crashing (contact with environment) ##############################
 
 
         # compute crashed environments if contact detected for 100 timesteps
@@ -126,6 +147,7 @@ class DefaultQuadcopterStrategy:
             rewards = {
                 "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
+                "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)

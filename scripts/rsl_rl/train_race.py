@@ -121,6 +121,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reward scales
     passing_gate_reward_scale = 10.0
     progress_goal_reward_scale = 2.0
+    yaw_reward_scale = 0.5
     crash_reward = -1.0
     death_cost = -10.0
 
@@ -128,6 +129,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'passing_gate_reward_scale': passing_gate_reward_scale,
         'progress_goal_reward_scale': progress_goal_reward_scale,
         'progress_norm_scale': 0.05,
+        'yaw_angle_scale': 0.15,
+        'yaw_reward_scale': yaw_reward_scale,
         'crash_reward_scale': crash_reward,
         'death_cost': death_cost,
     }
