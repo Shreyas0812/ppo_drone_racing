@@ -67,8 +67,8 @@ class DefaultQuadcopterStrategy:
 
         # Additional parameters for reward and observation calculations
         self._yaw_diff = torch.zeros(self.num_envs, device=self.device)
-        self._last_gate_x = torch.zeros(self.num_envs, device=self.device)
-        self._powerloop_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        # self._last_gate_x = torch.zeros(self.num_envs, device=self.device)
+        # self._powerloop_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
@@ -87,7 +87,7 @@ class DefaultQuadcopterStrategy:
         # y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.4
         # z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.4
 
-        gate_passed = crossed_plane & (dist_to_gate < 0.7)
+        gate_passed = crossed_plane & (dist_to_gate < 0.6)
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
@@ -129,21 +129,23 @@ class DefaultQuadcopterStrategy:
         # progress = prev_distance_to_goal - curr_distance_to_goal
         progress_norm_scale = getattr(self.env, 'rew', {}).get('progress_norm_scale', 0.05)
 
-        if len(ids_gate_passed) > 0:
-            new_gate_x = self.env._pose_drone_wrt_gate[ids_gate_passed, 0]
-            self._powerloop_active[ids_gate_passed] = (new_gate_x < 0)
-            self._last_gate_x[ids_gate_passed] = new_gate_x
+        # if len(ids_gate_passed) > 0:
+        #     new_gate_x = self.env._pose_drone_wrt_gate[ids_gate_passed, 0]
+        #     self._powerloop_active[ids_gate_passed] = (new_gate_x < 0)
+        #     self._last_gate_x[ids_gate_passed] = new_gate_x
 
-        # Deactivate power loop reward if drone goes back in front of the gate after crossing it
-        x_current = self.env._pose_drone_wrt_gate[:, 0]
-        self._powerloop_active[self._powerloop_active & (x_current > 0)] = False
+        # # Deactivate power loop reward if drone goes back in front of the gate after crossing it
+        # x_current = self.env._pose_drone_wrt_gate[:, 0]
+        # self._powerloop_active[self._powerloop_active & (x_current > 0)] = False
 
-        progress_x  = torch.tanh((x_current - self._last_gate_x) / progress_norm_scale)
-        progress_ow = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
+        # progress_x  = torch.tanh((x_current - self._last_gate_x) / progress_norm_scale)
+        # progress_ow = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
 
-        progress = torch.where(self._powerloop_active, progress_x, progress_ow)
+        # progress = torch.where(self._powerloop_active, progress_x, progress_ow)
 
-        self._last_gate_x = x_current.clone()
+        progress = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
+
+        # self._last_gate_x = x_current.clone()
 
         self.env._last_distance_to_goal = curr_distance_to_goal.clone()
 
@@ -344,7 +346,7 @@ class DefaultQuadcopterStrategy:
         default_root_state[:, 2] = initial_z
 
         # Forward momentum so powerloop is feasible right after spawn
-        forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.5, 2.5)
+        forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.5, 1.0)
         default_root_state[:, 7] = -forward_speed * cos_theta # world frame velocity in x direction
         default_root_state[:, 8] = -forward_speed * sin_theta # world frame velocity in y direction
         default_root_state[:, 9] = 0.0  # velocity in z direction
@@ -421,5 +423,5 @@ class DefaultQuadcopterStrategy:
 
         self.env._crashed[env_ids] = 0
 
-        self._last_gate_x[env_ids] = 0.0
-        self._powerloop_active[env_ids] = False
+        # self._last_gate_x[env_ids] = 0.0
+        # self._powerloop_active[env_ids] = False
