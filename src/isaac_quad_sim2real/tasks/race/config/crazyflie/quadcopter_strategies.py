@@ -206,8 +206,8 @@ class DefaultQuadcopterStrategy:
         # Previous actions
         prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
 
-        # Number of gates passed
-        gates_passed = self.env._n_gates_passed.unsqueeze(1).float()
+        # Number of gates passed (normalized to [0, 1])
+        gates_passed = self.env._n_gates_passed.unsqueeze(1).float() / self.env._waypoints.shape[0]
 
         # yaw difference to the gate
         yaw_diff = self._yaw_diff.unsqueeze(1)  # Shape: (num_envs, 1)
@@ -291,8 +291,9 @@ class DefaultQuadcopterStrategy:
         # This example code initializes the drone 2m behind the first gate. You should delete it or heavily
         # modify it once you begin the racing task.
 
-        # start from the zeroth waypoint (beginning of the race)
-        waypoint_indices = torch.zeros(n_reset, device=self.device, dtype=self.env._idx_wp.dtype)
+        # start from a random waypoint so all gate approaches are trained equally
+        waypoint_indices = torch.randint(0, self.env._waypoints.shape[0], (n_reset,),
+                                         device=self.device, dtype=self.env._idx_wp.dtype)
 
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
