@@ -65,6 +65,8 @@ class DefaultQuadcopterStrategy:
         # Thrust to weight ratio
         self.env._thrust_to_weight[:] = self.env._twr_value
 
+        self._yaw_diff = torch.zeros(self.num_envs, device=self.device)
+
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
         according to the reward scales you tune in train_race.py. """
@@ -131,6 +133,7 @@ class DefaultQuadcopterStrategy:
         yaw_diff = (yaw_diff + np.pi) % (2 * np.pi) - np.pi  # Wrap to [-pi, pi]
         yaw_reward = torch.exp(-yaw_diff**2 / (2 * (yaw_angle_scale**2)))  # Gaussian reward centered at 0 with std dev of 0.15 radians
         
+        self._yaw_diff = yaw_diff.clone()  # Store for Observation
 
         ###################################### Reward for crashing (contact with environment) ##############################
 
@@ -176,11 +179,9 @@ class DefaultQuadcopterStrategy:
         ##### Some example observations you may want to explore using
         # Angular velocities (referred to as body rates)
         drone_ang_vel_b = self.env._robot.data.root_ang_vel_b  # [roll_rate, pitch_rate, yaw_rate]
-        drone_ang_vel_b = self.env._robot.data.root_ang_vel_b  # [roll_rate, pitch_rate, yaw_rate]
 
         # Current target gate information
         current_gate_idx = self.env._idx_wp.unsqueeze(-1).float()       # [num_envs, 1]
-
         current_gate_pos_w = self.env._waypoints[self.env._idx_wp, :3]  # World position of current gate [num_envs, 3]
         current_gate_yaw = self.env._waypoints[self.env._idx_wp, -1].unsqueeze(-1)  # Yaw orientation [num_envs, 1]
 
@@ -188,30 +189,33 @@ class DefaultQuadcopterStrategy:
         drone_pos_gate_frame = self.env._pose_drone_wrt_gate
 
         # Relative position to current gate in body frame
-        gate_pos_b, _ = subtract_frame_transforms(
-            self.env._robot.data.root_link_pos_w,
-            self.env._robot.data.root_quat_w,
-            current_gate_pos_w
-        )
+        # gate_pos_b, _ = subtract_frame_transforms(
+        #     self.env._robot.data.root_link_pos_w,
+        #     self.env._robot.data.root_quat_w,
+        #     current_gate_pos_w
+        # )
 
         # Previous actions
         prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
 
         # Number of gates passed
         gates_passed = self.env._n_gates_passed.unsqueeze(1).float()
-        gates_passed = self.env._n_gates_passed.unsqueeze(1).float()
+
+        # yaw difference to the gate
+        yaw_diff = self._yaw_diff.unsqueeze(1)  # Shape: (num_envs, 1)
 
         # TODO ----- END -----
 
         obs = torch.cat(
             # TODO ----- START ----- List your observation tensors here to be concatenated together
             [
-                # drone_pose_w,       # position in the world frame (3 dims)
                 drone_lin_vel_b,    # velocity in the body frame (3 dims)
                 drone_ang_vel_b,    # angular velocity in the body frame (3 dims)
                 drone_quat_w,       # quaternion in the world frame (4 dims)
                 drone_pos_gate_frame,
                 gates_passed,       # number of gates passed (1 dim)
+                yaw_diff,          # yaw difference to the gate (1 dim)
+                prev_actions,       # previous actions (4 dims)
             ],
             # TODO ----- END -----
             dim=-1,
