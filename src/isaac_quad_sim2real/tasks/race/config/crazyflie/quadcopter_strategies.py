@@ -101,6 +101,14 @@ class DefaultQuadcopterStrategy:
         self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
         self.env._desired_pos_w[ids_gate_passed, 2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], 2]
 
+        # Update gate-relative pose immediately so observations see the NEW gate this step
+        if len(ids_gate_passed) > 0:
+            self.env._pose_drone_wrt_gate[ids_gate_passed], _ = subtract_frame_transforms(
+                self.env._waypoints[self.env._idx_wp[ids_gate_passed], :3],
+                self.env._waypoints_quat[self.env._idx_wp[ids_gate_passed], :],
+                self.env._robot.data.root_link_pos_w[ids_gate_passed]
+            )
+
         # calculate progress via distance to goal
         # distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
         # distance_to_goal = torch.tanh(distance_to_goal/3.0)
