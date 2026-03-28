@@ -28,11 +28,11 @@ from isaaclab.app import AppLauncher
 import cli_args
 
 # Debugger use:
-import debugpy
-debugpy.listen(5678)
-print("[DEBUG] Waiting for debugger to attach on port 5678...")
-debugpy.wait_for_client()
-print("[DEBUG] Debugger attached.")
+# import debugpy
+# debugpy.listen(5678)
+# print("[DEBUG] Waiting for debugger to attach on port 5678...")
+# debugpy.wait_for_client()
+# print("[DEBUG] Debugger attached.")
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
@@ -119,11 +119,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # TODO ----- START ----- Define rewards scales
     # reward scales
+    passing_gate_reward_scale = 10.0
     progress_goal_reward_scale = 50.0
     crash_reward = -1.0
     death_cost = -10.0
 
     rewards = {
+        'passing_gate_reward_scale': passing_gate_reward_scale,
         'progress_goal_reward_scale': progress_goal_reward_scale,
         'crash_reward_scale': crash_reward,
         'death_cost': death_cost,

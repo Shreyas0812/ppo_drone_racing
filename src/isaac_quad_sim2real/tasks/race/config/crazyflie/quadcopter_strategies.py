@@ -71,19 +71,46 @@ class DefaultQuadcopterStrategy:
 
         # TODO ----- START ----- Define the tensors required for your custom reward structure
         # check to change waypoint
+        x_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 0]
+        y_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 1]
+        z_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 2]
+        
         dist_to_gate = torch.linalg.norm(self.env._pose_drone_wrt_gate, dim=1)
-        gate_passed = dist_to_gate < 0.1
+        crossed_plane = (self.env._prev_x_drone_wrt_gate > 0) & (x_drone_wrt_gate <= 0)
+        # y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.4
+        # z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.4
+
+        gate_passed = crossed_plane & (dist_to_gate < 0.4)
+
+        self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
+
         ids_gate_passed = torch.where(gate_passed)[0]
         self.env._idx_wp[ids_gate_passed] = (self.env._idx_wp[ids_gate_passed] + 1) % self.env._waypoints.shape[0]
+
+        # Update n_gates_passed when gate is passed and reset the counter if a lap is completed
+        self.env._n_gates_passed[ids_gate_passed] += 1
+        lap_completed = self.env._n_gates_passed[ids_gate_passed] >= self.env._waypoints.shape[0]
+        self.env._n_gates_passed[ids_gate_passed] = torch.where(lap_completed, 0, self.env._n_gates_passed[ids_gate_passed])
+        self.env._yaw_n_laps[ids_gate_passed] += torch.where(lap_completed, 1, 0)
 
         # set desired positions in the world frame
         self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
         self.env._desired_pos_w[ids_gate_passed, 2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], 2]
 
         # calculate progress via distance to goal
-        distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
-        distance_to_goal = torch.tanh(distance_to_goal/3.0)
-        progress = 1 - distance_to_goal  # distance_to_goal is between 0 and 1 where 0 means the drone reached the goal
+        # distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
+        # distance_to_goal = torch.tanh(distance_to_goal/3.0)
+        # progress = 1 - distance_to_goal  # distance_to_goal is between 0 and 1 where 0 means the drone reached the goal
+
+        self.env._last_distance_to_goal[ids_gate_passed] = torch.linalg.norm(self.env._desired_pos_w[ids_gate_passed] - self.env._robot.data.root_link_pos_w[ids_gate_passed], dim=1)
+
+        prev_distance_to_goal = self.env._last_distance_to_goal
+        curr_distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
+
+        progress = prev_distance_to_goal - curr_distance_to_goal
+
+        self.env._last_distance_to_goal = curr_distance_to_goal.clone()
+
 
         # compute crashed environments if contact detected for 100 timesteps
         contact_forces = self.env._contact_sensor.data.net_forces_w
@@ -95,6 +122,7 @@ class DefaultQuadcopterStrategy:
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
+                "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
             }
@@ -144,17 +172,18 @@ class DefaultQuadcopterStrategy:
         # prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
 
         # Number of gates passed
-        # gates_passed = self.env._n_gates_passed.unsqueeze(1).float()
+        gates_passed = self.env._n_gates_passed.unsqueeze(1).float()
 
         # TODO ----- END -----
 
         obs = torch.cat(
             # TODO ----- START ----- List your observation tensors here to be concatenated together
             [
-                drone_pose_w,       # position in the world frame (3 dims)
+                # drone_pose_w,       # position in the world frame (3 dims)
                 drone_lin_vel_b,    # velocity in the body frame (3 dims)
                 drone_quat_w,       # quaternion in the world frame (4 dims)
-                drone_pos_gate_frame
+                drone_pos_gate_frame,
+                gates_passed,       # number of gates passed (1 dim)
             ],
             # TODO ----- END -----
             dim=-1,
