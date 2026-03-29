@@ -340,7 +340,7 @@ class QuadcopterEnv(DirectRLEnv):
         # Initialize other state variables
         self._pose_drone_wrt_gate = torch.zeros(self.num_envs, 3, device=self.device)
         self._prev_x_drone_wrt_gate = torch.ones(self.num_envs, device=self.device)
-        self._initial_wp = 0
+        self._initial_wp = 2
         self._n_run = 0
 
         self.set_debug_vis(self.cfg.debug_vis)
