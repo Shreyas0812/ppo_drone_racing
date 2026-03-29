@@ -83,11 +83,12 @@ class DefaultQuadcopterStrategy:
         z_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 2]
         
         dist_to_gate = torch.linalg.norm(self.env._pose_drone_wrt_gate, dim=1)
-        crossed_plane = (self.env._prev_x_drone_wrt_gate > 0) & (x_drone_wrt_gate <= 0)
+        # crossed_plane = (self.env._prev_x_drone_wrt_gate > 0) & (x_drone_wrt_gate <= 0)
         # y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.4
         # z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.4
 
-        gate_passed = crossed_plane & (dist_to_gate < 0.6)
+        # gate_passed = crossed_plane & (dist_to_gate < 0.6)
+        gate_passed = (dist_to_gate < 0.6)
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
@@ -172,6 +173,9 @@ class DefaultQuadcopterStrategy:
         self.env._crashed = self.env._crashed + crashed * mask
         # TODO ----- END -----
 
+        # Powerloop height incentive: when targeting gate 3, reward altitude to push drone upward
+        powerloop_height = (self.env._idx_wp == 3).float() * self.env._robot.data.root_link_pos_w[:, 2]
+
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
@@ -179,6 +183,7 @@ class DefaultQuadcopterStrategy:
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
+                "powerloop_height": powerloop_height * self.env.rew['powerloop_height_reward_scale'],
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,
