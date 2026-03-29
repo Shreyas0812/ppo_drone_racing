@@ -315,17 +315,25 @@ class DefaultQuadcopterStrategy:
         # This example code initializes the drone 2m behind the first gate. You should delete it or heavily
         # modify it once you begin the racing task.
 
-        # First we start from a single waypoint for some iterations so it learns the loop
-        # Then we randomize the starting waypoint so that the drone learns to approach gates from different angles and directions. 
-        # This also ensures that the drone does not overfit to the first gate and can generalize to the entire track.
-        learning_loop_iterations = 1500
-        use_random_start = hasattr(self.env, 'iteration') and self.env.iteration > learning_loop_iterations
-
-        if use_random_start:
-            waypoint_indices = torch.randint(0, self.env._waypoints.shape[0], (n_reset,),
-                                             device=self.device, dtype=self.env._idx_wp.dtype)
+        # Staged curriculum: gradually unlock start positions as training progresses.
+        # Gate 2 is intentionally skipped — it is naturally reached with momentum from gate 1.
+        # Gate 3 is unlocked separately as it requires the powerloop height behavior.
+        it = self.env.iteration if hasattr(self.env, 'iteration') else 0
+        if it < 2000:
+            # Gate 0 only
+            pool = [0]
+        elif it < 2800:
+            # Gates 0 and 1
+            pool = [0, 1]
+        elif it < 6000:
+            # Gates 0, 1, and 3 (powerloop segment unlocked)
+            pool = [0, 1, 3]
         else:
-            waypoint_indices = torch.zeros(n_reset, device=self.device, dtype=self.env._idx_wp.dtype)
+            # All gates
+            pool = list(range(self.env._waypoints.shape[0]))
+
+        pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
+        waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
 
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
