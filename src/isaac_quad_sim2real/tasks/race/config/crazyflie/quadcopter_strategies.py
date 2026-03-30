@@ -82,13 +82,19 @@ class DefaultQuadcopterStrategy:
         y_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 1]
         z_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 2]
         
-        dist_to_gate = torch.linalg.norm(self.env._pose_drone_wrt_gate, dim=1)
+        # dist_to_gate = torch.linalg.norm(self.env._pose_drone_wrt_gate, dim=1)
         # crossed_plane = (self.env._prev_x_drone_wrt_gate > 0) & (x_drone_wrt_gate <= 0)
         # y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.4
         # z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.4
 
         # gate_passed = crossed_plane & (dist_to_gate < 0.6)
-        gate_passed = (dist_to_gate < 0.6)
+        # gate_passed = (dist_to_gate < 0.6)
+
+        crossed_plane = (self.env._prev_x_drone_wrt_gate > 0) & (x_drone_wrt_gate <= 0)
+        y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.6
+        z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.6
+
+        gate_passed = crossed_plane & y_pass_safely & z_pass_safely
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
@@ -176,6 +182,19 @@ class DefaultQuadcopterStrategy:
         # Powerloop height incentive: when targeting gate 3, reward altitude to push drone upward
         powerloop_height = (self.env._idx_wp == 3).float() * self.env._robot.data.root_link_pos_w[:, 2]
 
+        # Wrong side penalty: penalize being front the gate and moving towards it 
+
+        gate_rot_matrix = matrix_from_quat(self.env._waypoints_quat[self.env._idx_wp])  # [num_envs, 3, 3]
+        gate_normal_w = gate_rot_matrix[:, :, 0]  # gate x-axis in world frame [num_envs, 3]
+        drone_rot_matrix = matrix_from_quat(self.env._robot.data.root_quat_w)  # [num_envs, 3, 3]
+        gate_normal_b = (drone_rot_matrix.transpose(1, 2) @ gate_normal_w.unsqueeze(-1)).squeeze(-1)  # [num_envs, 3]
+        drone_vel_b = self.env._robot.data.root_com_lin_vel_b  # body frame [num_envs, 3]
+        vel_along_normal = (drone_vel_b * gate_normal_b).sum(dim=1)  # projection
+
+        on_wrong_side = (x_drone_wrt_gate > 0).float()
+        moving_towards_gate = (vel_along_normal > 0).float()
+        wrong_side_and_moving_towards = on_wrong_side * moving_towards_gate
+
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
@@ -184,6 +203,7 @@ class DefaultQuadcopterStrategy:
                 "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
                 "powerloop_height": powerloop_height * self.env.rew['powerloop_height_reward_scale'],
+                "wrong_side": wrong_side_and_moving_towards * self.env.rew['wrong_side_reward_scale'],
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,

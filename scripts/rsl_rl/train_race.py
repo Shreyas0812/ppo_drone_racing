@@ -123,6 +123,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     progress_goal_reward_scale = 2.0
     yaw_reward_scale = 0.5
     powerloop_height_reward_scale = 0.8
+    wrong_side_reward_scale = -1.0
     crash_reward = -3.0
     death_cost = -20.0
 
@@ -133,6 +134,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'yaw_angle_scale': 0.5,
         'yaw_reward_scale': yaw_reward_scale,
         'powerloop_height_reward_scale': powerloop_height_reward_scale,
+        'wrong_side_reward_scale': wrong_side_reward_scale,
         'crash_reward_scale': crash_reward,
         'death_cost': death_cost,
     }
