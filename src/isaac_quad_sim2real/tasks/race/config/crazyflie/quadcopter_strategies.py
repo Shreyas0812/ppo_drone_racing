@@ -118,11 +118,10 @@ class DefaultQuadcopterStrategy:
                 self.env._waypoints_quat[self.env._idx_wp[ids_gate_passed], :],
                 self.env._robot.data.root_link_pos_w[ids_gate_passed]
             )
-
-        # calculate progress via distance to goal
-        # distance_to_goal = torch.linalg.norm(self.env._desired_pos_w - self.env._robot.data.root_link_pos_w, dim=1)
-        # distance_to_goal = torch.tanh(distance_to_goal/3.0)
-        # progress = 1 - distance_to_goal  # distance_to_goal is between 0 and 1 where 0 means the drone reached the goal
+            # Refresh local variables so downstream reward logic sees the new gate
+            x_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 0]
+            y_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 1]
+            z_drone_wrt_gate = self.env._pose_drone_wrt_gate[:, 2]
 
         ###################################################################################################################################################################
 
@@ -136,23 +135,7 @@ class DefaultQuadcopterStrategy:
         # progress = prev_distance_to_goal - curr_distance_to_goal
         progress_norm_scale = getattr(self.env, 'rew', {}).get('progress_norm_scale', 0.05)
 
-        # if len(ids_gate_passed) > 0:
-        #     new_gate_x = self.env._pose_drone_wrt_gate[ids_gate_passed, 0]
-        #     self._powerloop_active[ids_gate_passed] = (new_gate_x < 0)
-        #     self._last_gate_x[ids_gate_passed] = new_gate_x
-
-        # # Deactivate power loop reward if drone goes back in front of the gate after crossing it
-        # x_current = self.env._pose_drone_wrt_gate[:, 0]
-        # self._powerloop_active[self._powerloop_active & (x_current > 0)] = False
-
-        # progress_x  = torch.tanh((x_current - self._last_gate_x) / progress_norm_scale)
-        # progress_ow = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
-
-        # progress = torch.where(self._powerloop_active, progress_x, progress_ow)
-
         progress = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
-
-        # self._last_gate_x = x_current.clone()
 
         self.env._last_distance_to_goal = curr_distance_to_goal.clone()
 
@@ -179,21 +162,53 @@ class DefaultQuadcopterStrategy:
         self.env._crashed = self.env._crashed + crashed * mask
         # TODO ----- END -----
 
-        # Powerloop height incentive: when targeting gate 3, reward altitude to push drone upward
-        powerloop_height = (self.env._idx_wp == 3).float() * self.env._robot.data.root_link_pos_w[:, 2]
+        ######################################## Dealing with Powerloop at Gate 3 ########################################
 
-        # Wrong side penalty: penalize being front the gate and moving towards it 
+        # Wrong side penalty: penalize being front the gate and moving towards it
 
         gate_rot_matrix = matrix_from_quat(self.env._waypoints_quat[self.env._idx_wp])  # [num_envs, 3, 3]
-        gate_normal_w = gate_rot_matrix[:, :, 0]  # gate x-axis in world frame [num_envs, 3]
-        drone_rot_matrix = matrix_from_quat(self.env._robot.data.root_quat_w)  # [num_envs, 3, 3]
-        gate_normal_b = (drone_rot_matrix.transpose(1, 2) @ gate_normal_w.unsqueeze(-1)).squeeze(-1)  # [num_envs, 3]
-        drone_vel_b = self.env._robot.data.root_com_lin_vel_b  # body frame [num_envs, 3]
-        vel_along_normal = (drone_vel_b * gate_normal_b).sum(dim=1)  # projection
+        drone_vel_w = self.env._robot.data.root_com_lin_vel_w  # world frame [num_envs, 3]
 
-        on_wrong_side = (x_drone_wrt_gate > 0).float()
-        moving_towards_gate = (vel_along_normal > 0).float()
-        wrong_side_and_moving_towards = on_wrong_side * moving_towards_gate
+        # Project world-frame velocity onto each gate axis (dot product is frame-invariant)
+        vel_along_gate_x = (drone_vel_w * gate_rot_matrix[:, :, 0]).sum(dim=1)  # along gate x (pass-through direction)
+        vel_along_gate_y = (drone_vel_w * gate_rot_matrix[:, :, 1]).sum(dim=1)  # along gate y (lateral)
+        vel_along_gate_z = (drone_vel_w * gate_rot_matrix[:, :, 2]).sum(dim=1)  # along gate z (vertical in gate frame)
+
+        approach_x = (x_drone_wrt_gate > 0).float()
+        withdraw_x = (x_drone_wrt_gate <= 0).float()
+
+        approach_y = (y_drone_wrt_gate > 0).float()
+        withdraw_y = (y_drone_wrt_gate <= 0).float()
+
+        approach_z = (z_drone_wrt_gate > 0).float()
+        withdraw_z = (z_drone_wrt_gate <= 0).float()
+
+        gate3 = (self.env._idx_wp == 3).float()
+
+        if (self.env._idx_wp == 3).any():
+            # Phase 1: wrong side, below gate height (withdraw_x + withdraw_z)
+            # Drone needs to climb and not go deeper into wrong side
+            p1 = gate3 * withdraw_x * withdraw_z
+            p1_climb   = p1 * (vel_along_gate_z > 0).float()   # climbing → reward
+            p1_sink    = p1 * (vel_along_gate_z < 0).float()   # sinking → penalize
+            p1_deeper  = p1 * (vel_along_gate_x <= 0).float() * (vel_along_gate_z <= 0).float()  # not climbing and going deeper → penalize
+
+            # Phase 2: wrong side, above gate height (withdraw_x + approach_z)
+            # Drone needs to arc over toward correct side
+            p2 = gate3 * withdraw_x * approach_z
+            p2_arcing  = p2 * (vel_along_gate_x > 0).float()   # arcing toward correct side → reward
+
+            # Phase 3: correct side, above gate height (approach_x + approach_z)
+            # Drone needs to descend toward gate and not fly back
+            p3 = gate3 * approach_x * approach_z
+            p3_descend = p3 * (vel_along_gate_z < 0).float()   # descending toward gate → reward
+            p3_flyback = p3 * (vel_along_gate_x > 0).float()   # flying back to wrong side (+x = away from gate) → penalize
+        else:
+            # same vars are 0 when no env is targeting gate 3
+            p1_climb = p1_sink = p1_deeper = torch.zeros(self.num_envs, device=self.device)
+            p2_arcing = torch.zeros(self.num_envs, device=self.device)
+            p3_descend = p3_flyback = torch.zeros(self.num_envs, device=self.device)
+
 
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
@@ -202,8 +217,13 @@ class DefaultQuadcopterStrategy:
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
-                "powerloop_height": powerloop_height * self.env.rew['powerloop_height_reward_scale'],
-                "wrong_side": wrong_side_and_moving_towards * self.env.rew['wrong_side_reward_scale'],
+                # Gate 3 powerloop phase rewards/penalties
+                "p1_climb":   p1_climb   * self.env.rew['p1_climb_reward_scale'],    # Phase 1: reward climbing
+                "p1_sink":    p1_sink    * self.env.rew['p1_sink_reward_scale'],     # Phase 1: penalize sinking
+                "p1_deeper":  p1_deeper  * self.env.rew['p1_deeper_reward_scale'],   # Phase 1: penalize going deeper wrong way
+                "p2_arcing":  p2_arcing  * self.env.rew['p2_arcing_reward_scale'],   # Phase 2: reward arcing over to correct side
+                "p3_descend": p3_descend * self.env.rew['p3_descend_reward_scale'],  # Phase 3: reward descending toward gate
+                "p3_flyback": p3_flyback * self.env.rew['p3_flyback_reward_scale'],  # Phase 3: penalize flying back to wrong side
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,
