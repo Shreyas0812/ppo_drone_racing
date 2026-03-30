@@ -120,35 +120,41 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # TODO ----- START ----- Define rewards scales
     # reward scales
     passing_gate_reward_scale = 20.0
+    lap_complete_reward_scale = 150.0
     progress_goal_reward_scale = 2.0
     yaw_reward_scale = 0.5
     crash_reward = -3.0
     death_cost = -20.0
 
     # Gate 3 powerloop phase scales (use _reward_scale suffix so _episode_sums keys parse correctly)
-    p1_climb_reward_scale        =  1.0   # Phase 1: reward climbing (wrong side, below gate height)
-    p1_sink_reward_scale         = -1.0   # Phase 1: penalize sinking
-    p1_deeper_reward_scale       = -1.0   # Phase 1: penalize going deeper into wrong side
-    p1_toward_gate_reward_scale  = -2.0   # Phase 1: penalize moving toward gate at low altitude (skimming)
-    p2_arcing_reward_scale  =  1.5   # Phase 2: reward arcing over apex toward correct side
-    p3_descend_reward_scale =  1.0   # Phase 3: reward descending on correct side
-    p3_flyback_reward_scale = -1.5   # Phase 3: penalize flying back to wrong side
+    p1_x_reward_reward_scale =  1.0   # Phase 1: toward gate in x (world +y)
+    p1_y_reward_reward_scale =  1.0   # Phase 1: away from gate 2 in y (world +x)
+    p1_z_reward_reward_scale =  1.0   # Phase 1: climbing (world +z)
+    p1_penalty_reward_scale  = -1.0   # Phase 1: sinking or going deeper
+    p2_reward_reward_scale   =  1.5   # Phase 2: arc toward correct side (world +y)
+    p3_x_reward_reward_scale =  1.0   # Phase 3: toward gate in x (world -y)
+    p3_y_reward_reward_scale =  1.0   # Phase 3: centering in y
+    p3_z_reward_reward_scale =  1.0   # Phase 3: descending (world -z)
+    p3_penalty_reward_scale  = -1.5   # Phase 3: flying back to wrong side
 
     rewards = {
         'passing_gate_reward_scale': passing_gate_reward_scale,
+        'lap_complete_reward_scale': lap_complete_reward_scale,
         'progress_goal_reward_scale': progress_goal_reward_scale,
         'progress_norm_scale': 0.05,
         'yaw_angle_scale': 0.5,
         'yaw_reward_scale': yaw_reward_scale,
         'crash_reward_scale': crash_reward,
         'death_cost': death_cost,
-        'p1_climb_reward_scale':       p1_climb_reward_scale,
-        'p1_sink_reward_scale':        p1_sink_reward_scale,
-        'p1_deeper_reward_scale':      p1_deeper_reward_scale,
-        'p1_toward_gate_reward_scale': p1_toward_gate_reward_scale,
-        'p2_arcing_reward_scale':  p2_arcing_reward_scale,
-        'p3_descend_reward_scale': p3_descend_reward_scale,
-        'p3_flyback_reward_scale': p3_flyback_reward_scale,
+        'p1_x_reward_reward_scale': p1_x_reward_reward_scale,
+        'p1_y_reward_reward_scale': p1_y_reward_reward_scale,
+        'p1_z_reward_reward_scale': p1_z_reward_reward_scale,
+        'p1_penalty_reward_scale':  p1_penalty_reward_scale,
+        'p2_reward_reward_scale':   p2_reward_reward_scale,
+        'p3_x_reward_reward_scale': p3_x_reward_reward_scale,
+        'p3_y_reward_reward_scale': p3_y_reward_reward_scale,
+        'p3_z_reward_reward_scale': p3_z_reward_reward_scale,
+        'p3_penalty_reward_scale':  p3_penalty_reward_scale,
     }
     # TODO ----- END -----
 

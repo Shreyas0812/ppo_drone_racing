@@ -107,6 +107,10 @@ class DefaultQuadcopterStrategy:
         self.env._n_gates_passed[ids_gate_passed] = torch.where(lap_completed, 0, self.env._n_gates_passed[ids_gate_passed])
         self.env._yaw_n_laps[ids_gate_passed] += torch.where(lap_completed, 1, 0)
 
+        lap_completed_all = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        if len(ids_gate_passed) > 0:
+            lap_completed_all[ids_gate_passed] = lap_completed
+
         # set desired positions in the world frame
         self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
         self.env._desired_pos_w[ids_gate_passed, 2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], 2]
@@ -191,47 +195,54 @@ class DefaultQuadcopterStrategy:
 
         gate3 = (self.env._idx_wp == 3).float()
 
+        max_vel = 5.0  # m/s — used to normalize velocity-proportional rewards to [0, 1]
+
         if (self.env._idx_wp == 3).any():
             # Phase 1: wrong side, below gate height (withdraw_x + withdraw_z)
             # Drone needs to climb and not go deeper into wrong side
             p1 = gate3 * withdraw_x * withdraw_z
-            p1_climb        = p1 * (vel_along_gate_z > 0).float()   # climbing → reward
-            p1_sink         = p1 * (vel_along_gate_z < 0).float()   # sinking → penalize
-            p1_deeper       = p1 * (vel_along_gate_x <= 0).float() * (vel_along_gate_z <= 0).float()  # not climbing and going deeper → penalize
-            p1_toward_gate  = p1 * (vel_along_gate_x > 0).float()   # moving toward gate at low altitude (skimming) → penalize
+            p1_x_reward = p1 * (vel_along_gate_x / max_vel).clamp(0, 1)                               # toward gate in x (world +y) → reward
+            p1_y_reward = p1 * (-vel_along_gate_y / max_vel).clamp(0, 1)                              # away from gate 2 in y (world +x) → reward
+            p1_z_reward = p1 * (vel_along_gate_z / max_vel).clamp(0, 1)                               # climbing (world +z) → reward
+            p1_penalty  = p1 * ((-vel_along_gate_z).clamp(min=0) + (-vel_along_gate_x).clamp(min=0)).clamp(max=max_vel) / max_vel  # sinking or going deeper → penalize
 
             # Phase 2: wrong side, above gate height (withdraw_x + approach_z)
             # Drone needs to arc over toward correct side
             p2 = gate3 * withdraw_x * approach_z
-            p2_arcing  = p2 * (vel_along_gate_x > 0).float()   # arcing toward correct side → reward
+            p2_reward  = p2 * (vel_along_gate_x / max_vel).clamp(0, 1)   # arcing toward correct side (world +y) → reward
 
             # Phase 3: correct side, above gate height (approach_x + approach_z)
             # Drone needs to descend toward gate and not fly back
             p3 = gate3 * approach_x * approach_z
-            p3_descend = p3 * (vel_along_gate_z < 0).float()   # descending toward gate → reward
-            p3_flyback = p3 * (vel_along_gate_x > 0).float()   # flying back to wrong side (+x = away from gate) → penalize
+            p3_x_reward = p3 * (-vel_along_gate_x / max_vel).clamp(0, 1)                              # toward gate in x (world -y) → reward
+            p3_y_reward = p3 * (-y_drone_wrt_gate.sign() * vel_along_gate_y / max_vel).clamp(0, 1)   # centering in y → reward
+            p3_z_reward = p3 * (-vel_along_gate_z / max_vel).clamp(0, 1)                              # descending (world -z) → reward
+            p3_penalty  = p3 * (vel_along_gate_x / max_vel).clamp(0, 1)                               # flying back to wrong side → penalize
         else:
             # same vars are 0 when no env is targeting gate 3
-            p1_climb = p1_sink = p1_deeper = p1_toward_gate = torch.zeros(self.num_envs, device=self.device)
-            p2_arcing = torch.zeros(self.num_envs, device=self.device)
-            p3_descend = p3_flyback = torch.zeros(self.num_envs, device=self.device)
+            p1_x_reward = p1_y_reward = p1_z_reward = p1_penalty = torch.zeros(self.num_envs, device=self.device)
+            p2_reward = torch.zeros(self.num_envs, device=self.device)
+            p3_x_reward = p3_y_reward = p3_z_reward = p3_penalty = torch.zeros(self.num_envs, device=self.device)
 
 
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
                 "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
+                "lap_complete": lap_completed_all.float() * self.env.rew['lap_complete_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
                 # Gate 3 powerloop phase rewards/penalties
-                "p1_climb":   p1_climb   * self.env.rew['p1_climb_reward_scale'],    # Phase 1: reward climbing
-                "p1_sink":    p1_sink    * self.env.rew['p1_sink_reward_scale'],     # Phase 1: penalize sinking
-                "p1_deeper":       p1_deeper      * self.env.rew['p1_deeper_reward_scale'],       # Phase 1: penalize going deeper wrong way
-                "p1_toward_gate": p1_toward_gate * self.env.rew['p1_toward_gate_reward_scale'],  # Phase 1: penalize moving toward gate at low altitude
-                "p2_arcing":  p2_arcing  * self.env.rew['p2_arcing_reward_scale'],   # Phase 2: reward arcing over to correct side
-                "p3_descend": p3_descend * self.env.rew['p3_descend_reward_scale'],  # Phase 3: reward descending toward gate
-                "p3_flyback": p3_flyback * self.env.rew['p3_flyback_reward_scale'],  # Phase 3: penalize flying back to wrong side
+                "p1_x_reward": p1_x_reward * self.env.rew['p1_x_reward_reward_scale'],  # Phase 1: toward gate in x
+                "p1_y_reward": p1_y_reward * self.env.rew['p1_y_reward_reward_scale'],  # Phase 1: away from gate 2 in y
+                "p1_z_reward": p1_z_reward * self.env.rew['p1_z_reward_reward_scale'],  # Phase 1: climbing
+                "p1_penalty":  p1_penalty  * self.env.rew['p1_penalty_reward_scale'],   # Phase 1: sinking or going deeper
+                "p2_reward":   p2_reward   * self.env.rew['p2_reward_reward_scale'],    # Phase 2: arc to correct side
+                "p3_x_reward": p3_x_reward * self.env.rew['p3_x_reward_reward_scale'],  # Phase 3: toward gate in x
+                "p3_y_reward": p3_y_reward * self.env.rew['p3_y_reward_reward_scale'],  # Phase 3: centering in y
+                "p3_z_reward": p3_z_reward * self.env.rew['p3_z_reward_reward_scale'],  # Phase 3: descending
+                "p3_penalty":  p3_penalty  * self.env.rew['p3_penalty_reward_scale'],   # Phase 3: flying back to wrong side
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,
