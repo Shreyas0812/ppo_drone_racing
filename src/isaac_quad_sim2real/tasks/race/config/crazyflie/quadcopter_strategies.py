@@ -137,6 +137,11 @@ class DefaultQuadcopterStrategy:
 
         progress = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
 
+        # Remove Euclidean progress for gate 3 when on wrong side — it pulls the drone
+        # toward gate 3 from y<0 without doing the loop.
+        gate3_wrong_side_mask = (self.env._idx_wp == 3) & (x_drone_wrt_gate <= 0)
+        progress = torch.where(gate3_wrong_side_mask, torch.zeros_like(progress), progress)
+
         self.env._last_distance_to_goal = curr_distance_to_goal.clone()
 
         ###################################################################################################################################################################
@@ -180,8 +185,9 @@ class DefaultQuadcopterStrategy:
         approach_y = (y_drone_wrt_gate > 0).float()
         withdraw_y = (y_drone_wrt_gate <= 0).float()
 
-        approach_z = (z_drone_wrt_gate > 0).float()
-        withdraw_z = (z_drone_wrt_gate <= 0).float()
+        # Threshold at 0.5m above gate center = gate top (gate_side=1.0m, so top is at z_drone_wrt_gate=0.5)
+        approach_z = (z_drone_wrt_gate > 0.6).float()
+        withdraw_z = (z_drone_wrt_gate <= 0.6).float()
 
         gate3 = (self.env._idx_wp == 3).float()
 
@@ -189,9 +195,10 @@ class DefaultQuadcopterStrategy:
             # Phase 1: wrong side, below gate height (withdraw_x + withdraw_z)
             # Drone needs to climb and not go deeper into wrong side
             p1 = gate3 * withdraw_x * withdraw_z
-            p1_climb   = p1 * (vel_along_gate_z > 0).float()   # climbing → reward
-            p1_sink    = p1 * (vel_along_gate_z < 0).float()   # sinking → penalize
-            p1_deeper  = p1 * (vel_along_gate_x <= 0).float() * (vel_along_gate_z <= 0).float()  # not climbing and going deeper → penalize
+            p1_climb        = p1 * (vel_along_gate_z > 0).float()   # climbing → reward
+            p1_sink         = p1 * (vel_along_gate_z < 0).float()   # sinking → penalize
+            p1_deeper       = p1 * (vel_along_gate_x <= 0).float() * (vel_along_gate_z <= 0).float()  # not climbing and going deeper → penalize
+            p1_toward_gate  = p1 * (vel_along_gate_x > 0).float()   # moving toward gate at low altitude (skimming) → penalize
 
             # Phase 2: wrong side, above gate height (withdraw_x + approach_z)
             # Drone needs to arc over toward correct side
@@ -205,7 +212,7 @@ class DefaultQuadcopterStrategy:
             p3_flyback = p3 * (vel_along_gate_x > 0).float()   # flying back to wrong side (+x = away from gate) → penalize
         else:
             # same vars are 0 when no env is targeting gate 3
-            p1_climb = p1_sink = p1_deeper = torch.zeros(self.num_envs, device=self.device)
+            p1_climb = p1_sink = p1_deeper = p1_toward_gate = torch.zeros(self.num_envs, device=self.device)
             p2_arcing = torch.zeros(self.num_envs, device=self.device)
             p3_descend = p3_flyback = torch.zeros(self.num_envs, device=self.device)
 
@@ -220,7 +227,8 @@ class DefaultQuadcopterStrategy:
                 # Gate 3 powerloop phase rewards/penalties
                 "p1_climb":   p1_climb   * self.env.rew['p1_climb_reward_scale'],    # Phase 1: reward climbing
                 "p1_sink":    p1_sink    * self.env.rew['p1_sink_reward_scale'],     # Phase 1: penalize sinking
-                "p1_deeper":  p1_deeper  * self.env.rew['p1_deeper_reward_scale'],   # Phase 1: penalize going deeper wrong way
+                "p1_deeper":       p1_deeper      * self.env.rew['p1_deeper_reward_scale'],       # Phase 1: penalize going deeper wrong way
+                "p1_toward_gate": p1_toward_gate * self.env.rew['p1_toward_gate_reward_scale'],  # Phase 1: penalize moving toward gate at low altitude
                 "p2_arcing":  p2_arcing  * self.env.rew['p2_arcing_reward_scale'],   # Phase 2: reward arcing over to correct side
                 "p3_descend": p3_descend * self.env.rew['p3_descend_reward_scale'],  # Phase 3: reward descending toward gate
                 "p3_flyback": p3_flyback * self.env.rew['p3_flyback_reward_scale'],  # Phase 3: penalize flying back to wrong side

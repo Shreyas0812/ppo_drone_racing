@@ -126,9 +126,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     death_cost = -20.0
 
     # Gate 3 powerloop phase scales (use _reward_scale suffix so _episode_sums keys parse correctly)
-    p1_climb_reward_scale   =  1.0   # Phase 1: reward climbing (wrong side, below gate height)
-    p1_sink_reward_scale    = -1.0   # Phase 1: penalize sinking
-    p1_deeper_reward_scale  = -1.0   # Phase 1: penalize going deeper into wrong side
+    p1_climb_reward_scale        =  1.0   # Phase 1: reward climbing (wrong side, below gate height)
+    p1_sink_reward_scale         = -1.0   # Phase 1: penalize sinking
+    p1_deeper_reward_scale       = -1.0   # Phase 1: penalize going deeper into wrong side
+    p1_toward_gate_reward_scale  = -2.0   # Phase 1: penalize moving toward gate at low altitude (skimming)
     p2_arcing_reward_scale  =  1.5   # Phase 2: reward arcing over apex toward correct side
     p3_descend_reward_scale =  1.0   # Phase 3: reward descending on correct side
     p3_flyback_reward_scale = -1.5   # Phase 3: penalize flying back to wrong side
@@ -141,9 +142,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'yaw_reward_scale': yaw_reward_scale,
         'crash_reward_scale': crash_reward,
         'death_cost': death_cost,
-        'p1_climb_reward_scale':   p1_climb_reward_scale,
-        'p1_sink_reward_scale':    p1_sink_reward_scale,
-        'p1_deeper_reward_scale':  p1_deeper_reward_scale,
+        'p1_climb_reward_scale':       p1_climb_reward_scale,
+        'p1_sink_reward_scale':        p1_sink_reward_scale,
+        'p1_deeper_reward_scale':      p1_deeper_reward_scale,
+        'p1_toward_gate_reward_scale': p1_toward_gate_reward_scale,
         'p2_arcing_reward_scale':  p2_arcing_reward_scale,
         'p3_descend_reward_scale': p3_descend_reward_scale,
         'p3_flyback_reward_scale': p3_flyback_reward_scale,
