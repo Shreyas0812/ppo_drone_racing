@@ -395,19 +395,23 @@ class DefaultQuadcopterStrategy:
         # Gate 3 is unlocked separately as it requires the powerloop height behavior.
         domain_randomization = False
         it = self.env.iteration if hasattr(self.env, 'iteration') else 0
-        if it < 1500:
-            # Gate 0 only
-            pool = [0]
-        elif it < 2500:
-            # Gates 0, 1, and 3 (powerloop segment unlocked)
-            pool = [0, 1, 3]
-        else:
-            # All gates
-            pool = list(range(self.env._waypoints.shape[0]))
+        # if it < 1500:
+        #     # Gate 0 only
+        #     pool = [0]
+        # elif it < 2500:
+        #     # Gates 0, 1, and 3 (powerloop segment unlocked)
+        #     pool = [0, 1, 3]
+        # else:
+        #     # All gates
+        #     pool = list(range(self.env._waypoints.shape[0]))
 
-            if it > 5000:
-                # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
-                domain_randomization = True
+        #     if it > 5000:
+        #         # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
+        #         domain_randomization = True
+        pool = [0]
+        if it > 5000:
+            # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
+            domain_randomization = True
 
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
