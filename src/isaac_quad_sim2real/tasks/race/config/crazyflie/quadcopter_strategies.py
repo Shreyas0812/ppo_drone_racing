@@ -210,7 +210,7 @@ class DefaultQuadcopterStrategy:
 
         gate3 = (self.env._idx_wp == 3).float()
 
-        max_vel = 5.0  # m/s — used to normalize velocity-proportional rewards to [0, 1]
+        max_vel = 4.0  # m/s — used to normalize velocity-proportional rewards to [0, 1]
 
         if (self.env._idx_wp == 3).any():
             # Phase 1: wrong side, below gate height (withdraw_x + withdraw_z)
@@ -415,6 +415,11 @@ class DefaultQuadcopterStrategy:
 
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
+
+        # For crashed envs: reset to the gate they crashed at
+        crashed_mask = self.env.reset_terminated[env_ids]
+        if crashed_mask.any():
+            waypoint_indices = torch.where(crashed_mask, self.env._idx_wp[env_ids], waypoint_indices)
 
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
