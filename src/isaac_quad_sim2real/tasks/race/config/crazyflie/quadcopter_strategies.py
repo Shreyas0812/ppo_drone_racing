@@ -377,19 +377,21 @@ class DefaultQuadcopterStrategy:
         # Staged curriculum: gradually unlock start positions as training progresses.
         # Gate 2 is intentionally skipped — it is naturally reached with momentum from gate 1.
         # Gate 3 is unlocked separately as it requires the powerloop height behavior.
+        domain_randomization = False
         it = self.env.iteration if hasattr(self.env, 'iteration') else 0
-        if it < 2000:
+        if it < 1500:
             # Gate 0 only
             pool = [0]
-        elif it < 2800:
-            # Gates 0 and 1
-            pool = [0, 1]
-        elif it < 6000:
+        elif it < 2500:
             # Gates 0, 1, and 3 (powerloop segment unlocked)
             pool = [0, 1, 3]
         else:
             # All gates
             pool = list(range(self.env._waypoints.shape[0]))
+
+            if it > 5000:
+                # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
+                domain_randomization = True
 
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
@@ -495,5 +497,49 @@ class DefaultQuadcopterStrategy:
 
         self.env._crashed[env_ids] = 0
 
+        # Domain randomization: enabled after 5500 iterations
+        if domain_randomization:
+            self._randomize_parameters(env_ids, it)
+
         # self._last_gate_x[env_ids] = 0.0
         # self._powerloop_active[env_ids] = False
+
+    def _randomize_parameters(self, env_ids: torch.Tensor, iteration: int):
+        """Randomize dynamics parameters within evaluation bounds for the given envs."""
+        n = len(env_ids)
+        cfg = self.cfg
+
+        if (iteration > 5000):
+            # TWR +-5%
+            twr = cfg.thrust_to_weight * torch.empty(n, device=self.device).uniform_(0.95, 1.05)
+            self.env._thrust_to_weight[env_ids] = twr
+        
+        if (iteration > 5500):
+            # Aerodynamics: 50%-200%
+            k_xy = cfg.k_aero_xy * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
+            k_z = cfg.k_aero_z * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
+            self.env._K_aero[env_ids, :2] = k_xy.unsqueeze(1)
+            self.env._K_aero[env_ids, 2] = k_z
+        
+        if (iteration > 6000):
+            # PID gains - roll/pitch: +-15%
+            kp_rp = cfg.kp_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
+            ki_rp = cfg.ki_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
+            kd_rp = cfg.kd_omega_rp * torch.empty(n, device=self.device).uniform_(0.7, 1.3)
+            self.env._kp_omega[env_ids, :2] = kp_rp.unsqueeze(1)
+            self.env._ki_omega[env_ids, :2] = ki_rp.unsqueeze(1)
+            self.env._kd_omega[env_ids, :2] = kd_rp.unsqueeze(1)
+
+        if iteration > 6500:
+
+            # PID gains - yaw: +-15%
+            kp_y = cfg.kp_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
+            ki_y = cfg.ki_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
+            kd_y = cfg.kd_omega_y * torch.empty(n, device=self.device).uniform_(0.7, 1.3)
+            self.env._kp_omega[env_ids, 2] = kp_y
+            self.env._ki_omega[env_ids, 2] = ki_y
+            self.env._kd_omega[env_ids, 2] = kd_y
+
+        # if iteration > 7000:
+        #     # Motor time constant: keep fixed (no spec given)
+        #     self.env._tau_m[env_ids] = cfg.tau_m
