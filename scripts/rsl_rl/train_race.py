@@ -136,6 +136,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     p3_y_reward_reward_scale =  1.0   # Phase 3: centering in y
     p3_z_reward_reward_scale =  1.0   # Phase 3: descending (world -z)
     p3_penalty_reward_scale  = -1.5   # Phase 3: flying back to wrong side
+    lap_time_bonus_reward_scale = 50.0  # Speed bonus on top of flat lap_complete reward
 
     rewards = {
         'passing_gate_reward_scale': passing_gate_reward_scale,
@@ -155,6 +156,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'p3_y_reward_reward_scale': p3_y_reward_reward_scale,
         'p3_z_reward_reward_scale': p3_z_reward_reward_scale,
         'p3_penalty_reward_scale':  p3_penalty_reward_scale,
+        'lap_time_bonus_reward_scale': lap_time_bonus_reward_scale,
+        'target_lap_time': 5.0,
     }
     # TODO ----- END -----
 

@@ -69,6 +69,7 @@ class DefaultQuadcopterStrategy:
         self._yaw_diff = torch.zeros(self.num_envs, device=self.device)
         # self._last_gate_x = torch.zeros(self.num_envs, device=self.device)
         # self._powerloop_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._lap_start_time = torch.zeros(self.num_envs, device=self.device)
 
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
@@ -94,6 +95,13 @@ class DefaultQuadcopterStrategy:
         y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.6
         z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.6
 
+        # Require minimum forward velocity through the gate to reject crash-bounce false positives
+        # gate_rot_matrix_pass = matrix_from_quat(self.env._waypoints_quat[self.env._idx_wp])
+        # drone_vel_w_pass = self.env._robot.data.root_com_lin_vel_w
+        # vel_fwd = (drone_vel_w_pass * gate_rot_matrix_pass[:, :, 0]).sum(dim=1)
+        # flying_through = vel_fwd > 0.3  # m/s — below this is a bounce, not a clean pass
+
+        # gate_passed = crossed_plane & y_pass_safely & z_pass_safely & flying_through
         gate_passed = crossed_plane & y_pass_safely & z_pass_safely
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
@@ -110,6 +118,13 @@ class DefaultQuadcopterStrategy:
         lap_completed_all = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         if len(ids_gate_passed) > 0:
             lap_completed_all[ids_gate_passed] = lap_completed
+
+        # Lap time bonus: reward faster laps on top of the flat lap_complete bonus
+        current_time = self.env.episode_length_buf * self.env.cfg.sim.dt * self.env.cfg.decimation
+        lap_time = (current_time - self._lap_start_time).clamp(min=0.1)
+        target_lap_time = getattr(self.env, 'rew', {}).get('target_lap_time', 5.0)
+        lap_time_bonus = torch.exp(-lap_time / target_lap_time) * lap_completed_all.float()
+        self._lap_start_time[lap_completed_all] = current_time[lap_completed_all]
 
         # set desired positions in the world frame
         self.env._desired_pos_w[ids_gate_passed, :2] = self.env._waypoints[self.env._idx_wp[ids_gate_passed], :2]
@@ -243,6 +258,7 @@ class DefaultQuadcopterStrategy:
                 "p3_y_reward": p3_y_reward * self.env.rew['p3_y_reward_reward_scale'],  # Phase 3: centering in y
                 "p3_z_reward": p3_z_reward * self.env.rew['p3_z_reward_reward_scale'],  # Phase 3: descending
                 "p3_penalty":  p3_penalty  * self.env.rew['p3_penalty_reward_scale'],   # Phase 3: flying back to wrong side
+                "lap_time_bonus": lap_time_bonus * self.env.rew['lap_time_bonus_reward_scale'],
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,
@@ -486,6 +502,7 @@ class DefaultQuadcopterStrategy:
 
         # Reset variables
         self.env._yaw_n_laps[env_ids] = 0
+        self._lap_start_time[env_ids] = 0.0
 
         self.env._pose_drone_wrt_gate[env_ids], _ = subtract_frame_transforms(
             self.env._waypoints[self.env._idx_wp[env_ids], :3],
