@@ -458,9 +458,11 @@ class DefaultQuadcopterStrategy:
         #         domain_randomization = True
         pool = [0]
         if it > 1000:
-            # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
+            # Start Domain Randomization after 1000 iterations (can be adjusted based on training progress)
             domain_randomization = True
-
+        elif it > 3500:
+            domain_randomization = False
+        
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
 
