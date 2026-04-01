@@ -167,7 +167,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'p3_penalty_reward_scale':  p3_penalty_reward_scale,
         'powerloop_sequence_reward_scale': powerloop_sequence_reward_scale,
         'powerloop_time_bonus_reward_scale': powerloop_time_bonus_reward_scale,
-        'target_powerloop_time': 2.0,
+        'target_powerloop_time': 1.0,
         'gate3_time_penalty_reward_scale': gate3_time_penalty_reward_scale,
         'max_vel_gate3': 5.0,
     }
