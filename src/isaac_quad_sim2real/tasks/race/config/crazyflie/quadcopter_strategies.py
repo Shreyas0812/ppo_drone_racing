@@ -75,6 +75,7 @@ class DefaultQuadcopterStrategy:
         self._visited_p1 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._visited_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._visited_p3 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._powerloop_done_this_lap = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
@@ -262,6 +263,11 @@ class DefaultQuadcopterStrategy:
         self._visited_p1[completed] = False
         self._visited_p2[completed] = False
         self._visited_p3[completed] = False
+        self._powerloop_done_this_lap |= completed
+
+        # Gate lap_complete on powerloop having been done this lap; reset flag on lap completion
+        lap_completed_all = lap_completed_all & self._powerloop_done_this_lap
+        self._powerloop_done_this_lap[lap_completed_all] = False
 
 
         if self.cfg.is_train:
@@ -559,6 +565,7 @@ class DefaultQuadcopterStrategy:
         self._visited_p1[env_ids] = False
         self._visited_p2[env_ids] = False
         self._visited_p3[env_ids] = False
+        self._powerloop_done_this_lap[env_ids] = False
 
         # Domain randomization: enabled after 5500 iterations
         if domain_randomization:
