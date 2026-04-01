@@ -139,7 +139,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     p3_y_reward_reward_scale =  1.0   # Phase 3: centering in y
     p3_z_reward_reward_scale =  1.0   # Phase 3: descending (world -z)
     p3_penalty_reward_scale  = -1.5   # Phase 3: flying back to wrong side
-    powerloop_sequence_reward_scale = 15.0   # One-shot bonus for completing p1→p2→p3 sequence
+    powerloop_sequence_reward_scale = 60.0   # One-shot bonus for completing p1→p2→p3 sequence
     gate3_time_penalty_reward_scale = -0.05  # Per-step cost while targeting gate 3 (prevents phase farming)
 
     rewards = {

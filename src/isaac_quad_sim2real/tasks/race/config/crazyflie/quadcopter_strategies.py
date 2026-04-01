@@ -109,7 +109,12 @@ class DefaultQuadcopterStrategy:
 
         # gate_passed = crossed_plane & y_pass_safely & z_pass_safely & flying_through
         gate_passed = crossed_plane & y_pass_safely & z_pass_safely
-        gate3_passed = gate_passed & (self.env._idx_wp == 3)  # capture before _idx_wp is incremented
+        # Gate 3 only counts if the powerloop arc was executed: drone must have been above gate
+        # height on the wrong side (Phase 2) earlier this episode. Without this, the drone can
+        # pass gate 3 via a horizontal detour and never learn the vertical loop.
+        at_gate3 = (self.env._idx_wp == 3)
+        gate_passed = torch.where(at_gate3, gate_passed & self._visited_p2, gate_passed)
+        gate3_passed = gate_passed & at_gate3  # capture before _idx_wp is incremented
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
@@ -578,6 +583,9 @@ class DefaultQuadcopterStrategy:
         """Randomize dynamics parameters within evaluation bounds for the given envs."""
         n = len(env_ids)
         cfg = self.cfg
+
+        if iteration == 1001:
+            print(f"Starting domain randomization at iteration {iteration} on envs {env_ids.cpu().numpy()}")
 
         if (iteration > 1000):
             # TWR +-5%
