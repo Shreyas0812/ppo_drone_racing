@@ -70,6 +70,7 @@ class DefaultQuadcopterStrategy:
         # self._last_gate_x = torch.zeros(self.num_envs, device=self.device)
         # self._powerloop_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._lap_start_time = torch.zeros(self.num_envs, device=self.device)
+        self._powerloop_start_time = torch.zeros(self.num_envs, device=self.device)
 
         # Powerloop phase sequence tracking
         self._visited_p1 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -248,7 +249,9 @@ class DefaultQuadcopterStrategy:
             p3_z_reward = p3 * (-vel_along_gate_z / max_vel_gate3).clamp(0, 1)                              # descending (world -z) → reward
             p3_penalty  = p3 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)                               # flying back to wrong side → penalize
 
-            # Accumulate phase visits
+            # Accumulate phase visits — start powerloop timer on first entry into phase 1
+            newly_entered_p1 = (p1 > 0) & ~self._visited_p1
+            self._powerloop_start_time[newly_entered_p1] = current_time[newly_entered_p1]
             self._visited_p1 |= (p1 > 0)
             self._visited_p2 |= ((p2 > 0) & self._visited_p1)
             self._visited_p3 |= ((p3 > 0) & self._visited_p2)
@@ -274,6 +277,11 @@ class DefaultQuadcopterStrategy:
         lap_completed_all = lap_completed_all & self._powerloop_done_this_lap
         self._powerloop_done_this_lap[lap_completed_all] = False
 
+        # Powerloop time bonus: exponential bonus for completing the loop quickly
+        target_powerloop_time = getattr(self.env, 'rew', {}).get('target_powerloop_time', 2.5)
+        powerloop_time = (current_time - self._powerloop_start_time).clamp(min=0.1)
+        powerloop_time_bonus = torch.exp(-powerloop_time / target_powerloop_time) * powerloop_sequence
+
 
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
@@ -296,6 +304,7 @@ class DefaultQuadcopterStrategy:
                 "p3_z_reward": p3_z_reward * self.env.rew['p3_z_reward_reward_scale'],  # Phase 3: descending
                 "p3_penalty":  p3_penalty  * self.env.rew['p3_penalty_reward_scale'],   # Phase 3: flying back to wrong side
                 "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
+                "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
                 "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3
                 "lap_time_bonus": lap_time_bonus * self.env.rew['lap_time_bonus_reward_scale'],
             }
@@ -556,6 +565,7 @@ class DefaultQuadcopterStrategy:
         # Reset variables
         self.env._yaw_n_laps[env_ids] = 0
         self._lap_start_time[env_ids] = 0.0
+        self._powerloop_start_time[env_ids] = 0.0
 
         self.env._pose_drone_wrt_gate[env_ids], _ = subtract_frame_transforms(
             self.env._waypoints[self.env._idx_wp[env_ids], :3],
