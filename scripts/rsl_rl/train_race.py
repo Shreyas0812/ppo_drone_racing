@@ -121,7 +121,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reward scales
     passing_gate_reward_scale = 20.0
     lap_complete_reward_scale = 50.0
-    lap_time_bonus_reward_scale = 600.0  # Speed bonus on top of flat lap_complete reward
+    lap_time_bonus_reward_scale = 200.0  # Speed bonus on top of flat lap_complete reward
     progress_goal_reward_scale = 2.0
     yaw_reward_scale = 0.5
     crash_reward = -6.0
@@ -141,7 +141,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     p3_penalty_reward_scale  = -1.5   # Phase 3: flying back to wrong side
     powerloop_sequence_reward_scale = 60.0   # One-shot bonus for completing p1→p2→p3 sequence
     powerloop_time_bonus_reward_scale = 100.0  # Exponential bonus for faster powerloop execution
-    gate3_time_penalty_reward_scale = -0.12  # Per-step cost while targeting gate 3 (prevents phase farming)
+    gate3_time_penalty_reward_scale = -0.05  # Per-step cost while targeting gate 3 (prevents phase farming)
 
     rewards = {
         'passing_gate_reward_scale': passing_gate_reward_scale,
@@ -167,7 +167,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'p3_penalty_reward_scale':  p3_penalty_reward_scale,
         'powerloop_sequence_reward_scale': powerloop_sequence_reward_scale,
         'powerloop_time_bonus_reward_scale': powerloop_time_bonus_reward_scale,
-        'target_powerloop_time': 1.0,
+        'target_powerloop_time': 2.0,
         'gate3_time_penalty_reward_scale': gate3_time_penalty_reward_scale,
         'max_vel_gate3': 5.0,
     }
