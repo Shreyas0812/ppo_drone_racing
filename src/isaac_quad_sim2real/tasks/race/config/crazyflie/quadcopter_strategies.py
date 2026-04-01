@@ -409,7 +409,7 @@ class DefaultQuadcopterStrategy:
         #         # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
         #         domain_randomization = True
         pool = [0]
-        if it > 5000:
+        if it > 1000:
             # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
             domain_randomization = True
 
@@ -535,19 +535,19 @@ class DefaultQuadcopterStrategy:
         n = len(env_ids)
         cfg = self.cfg
 
-        if (iteration > 5000):
+        if (iteration > 1000):
             # TWR +-5%
             twr = cfg.thrust_to_weight * torch.empty(n, device=self.device).uniform_(0.95, 1.05)
             self.env._thrust_to_weight[env_ids] = twr
         
-        if (iteration > 5500):
+        if (iteration > 1500):
             # Aerodynamics: 50%-200%
             k_xy = cfg.k_aero_xy * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
             k_z = cfg.k_aero_z * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
             self.env._K_aero[env_ids, :2] = k_xy.unsqueeze(1)
             self.env._K_aero[env_ids, 2] = k_z
         
-        if (iteration > 6000):
+        if (iteration > 2000):
             # PID gains - roll/pitch: +-15%
             kp_rp = cfg.kp_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
             ki_rp = cfg.ki_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
@@ -556,7 +556,7 @@ class DefaultQuadcopterStrategy:
             self.env._ki_omega[env_ids, :2] = ki_rp.unsqueeze(1)
             self.env._kd_omega[env_ids, :2] = kd_rp.unsqueeze(1)
 
-        if iteration > 6500:
+        if iteration > 2500:
 
             # PID gains - yaw: +-15%
             kp_y = cfg.kp_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
