@@ -120,11 +120,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # TODO ----- START ----- Define rewards scales
     # reward scales
     passing_gate_reward_scale = 20.0
-    lap_complete_reward_scale = 100.0
-    lap_time_bonus_reward_scale = 120.0  # Speed bonus on top of flat lap_complete reward
+    lap_complete_reward_scale = 50.0
+    lap_time_bonus_reward_scale = 200.0  # Speed bonus on top of flat lap_complete reward
     progress_goal_reward_scale = 2.0
     yaw_reward_scale = 0.5
-    crash_reward = -3.0
+    crash_reward = -6.0
     death_cost = -20.0
 
     # Gate 3 powerloop phase scales (use _reward_scale suffix so _episode_sums keys parse correctly)
@@ -132,8 +132,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     p1_y_reward_reward_scale =  0.6   # Phase 1: away from gate 2 in y (world +x)
     p1_z_reward_reward_scale =  1.0   # Phase 1: climbing (world +z)
     p1_penalty_reward_scale  = -1.0   # Phase 1: sinking or going deeper
-    p2_x_reward_reward_scale        =  1.5   # Phase 2: arc toward correct side (world +y)
-    p2_z_reward_reward_scale      =  1.0   # Phase 2: descending while arcing (tightens loop)
+    p2_x_reward_reward_scale =  1.5   # Phase 2: arc toward correct side (world +y)
+    p2_z_reward_reward_scale =  1.0   # Phase 2: descending while arcing (tightens loop)
     p2_z_penalty_reward_scale = -1.0   # Phase 2: still climbing in p2
     p3_x_reward_reward_scale =  1.0   # Phase 3: toward gate in x (world -y)
     p3_y_reward_reward_scale =  1.0   # Phase 3: centering in y
