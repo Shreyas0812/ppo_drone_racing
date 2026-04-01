@@ -71,6 +71,11 @@ class DefaultQuadcopterStrategy:
         # self._powerloop_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._lap_start_time = torch.zeros(self.num_envs, device=self.device)
 
+        # Powerloop phase sequence tracking
+        self._visited_p1 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._visited_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._visited_p3 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
         according to the reward scales you tune in train_race.py. """
@@ -92,8 +97,8 @@ class DefaultQuadcopterStrategy:
         # gate_passed = (dist_to_gate < 0.6)
 
         crossed_plane = (self.env._prev_x_drone_wrt_gate > 0) & (x_drone_wrt_gate <= 0)
-        y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.6
-        z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.6
+        y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.72
+        z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.72
 
         # Require minimum forward velocity through the gate to reject crash-bounce false positives
         # gate_rot_matrix_pass = matrix_from_quat(self.env._waypoints_quat[self.env._idx_wp])
@@ -103,6 +108,7 @@ class DefaultQuadcopterStrategy:
 
         # gate_passed = crossed_plane & y_pass_safely & z_pass_safely & flying_through
         gate_passed = crossed_plane & y_pass_safely & z_pass_safely
+        gate3_passed = gate_passed & (self.env._idx_wp == 3)  # capture before _idx_wp is incremented
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
@@ -210,34 +216,50 @@ class DefaultQuadcopterStrategy:
 
         gate3 = (self.env._idx_wp == 3).float()
 
-        max_vel = 4.0  # m/s — used to normalize velocity-proportional rewards to [0, 1]
+        max_vel_gate3 = getattr(self.env, 'rew', {}).get('max_vel_gate3', 5.0)
 
         if (self.env._idx_wp == 3).any():
             # Phase 1: wrong side, below gate height (withdraw_x + withdraw_z)
             # Drone needs to climb and not go deeper into wrong side
             p1 = gate3 * withdraw_x * withdraw_z
-            p1_x_reward = p1 * (vel_along_gate_x / max_vel).clamp(0, 1)                               # toward gate in x (world +y) → reward
-            p1_y_reward = p1 * (-vel_along_gate_y / max_vel).clamp(0, 1)                              # away from gate 2 in y (world +x) → reward
-            p1_z_reward = p1 * (vel_along_gate_z / max_vel).clamp(0, 1)                               # climbing (world +z) → reward
-            p1_penalty  = p1 * ((-vel_along_gate_z).clamp(min=0) + (-vel_along_gate_x).clamp(min=0)).clamp(max=max_vel) / max_vel  # sinking or going deeper → penalize
+            p1_x_reward = p1 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)                               # toward gate in x (world +y) → reward
+            p1_y_reward = p1 * (-vel_along_gate_y / max_vel_gate3).clamp(0, 1)                              # away from gate 2 in y (world +x) → reward
+            p1_z_reward = p1 * (vel_along_gate_z / max_vel_gate3).clamp(0, 1)                               # climbing (world +z) → reward
+            p1_penalty  = p1 * ((-vel_along_gate_z).clamp(min=0) + (-vel_along_gate_x).clamp(min=0)).clamp(max=max_vel_gate3) / max_vel_gate3  # sinking or going deeper → penalize
 
             # Phase 2: wrong side, above gate height (withdraw_x + approach_z)
             # Drone needs to arc over toward correct side
             p2 = gate3 * withdraw_x * approach_z
-            p2_reward  = p2 * (vel_along_gate_x / max_vel).clamp(0, 1)   # arcing toward correct side (world +y) → reward
+            p2_reward  = p2 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)   # arcing toward correct side (world +y) → reward
 
             # Phase 3: correct side, above gate height (approach_x + approach_z)
             # Drone needs to descend toward gate and not fly back
             p3 = gate3 * approach_x * approach_z
-            p3_x_reward = p3 * (-vel_along_gate_x / max_vel).clamp(0, 1)                              # toward gate in x (world -y) → reward
-            p3_y_reward = p3 * (-y_drone_wrt_gate.sign() * vel_along_gate_y / max_vel).clamp(0, 1)   # centering in y → reward
-            p3_z_reward = p3 * (-vel_along_gate_z / max_vel).clamp(0, 1)                              # descending (world -z) → reward
-            p3_penalty  = p3 * (vel_along_gate_x / max_vel).clamp(0, 1)                               # flying back to wrong side → penalize
+            p3_x_reward = p3 * (-vel_along_gate_x / max_vel_gate3).clamp(0, 1)                              # toward gate in x (world -y) → reward
+            p3_y_reward = p3 * (-y_drone_wrt_gate.sign() * vel_along_gate_y / max_vel_gate3).clamp(0, 1)   # centering in y → reward
+            p3_z_reward = p3 * (-vel_along_gate_z / max_vel_gate3).clamp(0, 1)                              # descending (world -z) → reward
+            p3_penalty  = p3 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)                               # flying back to wrong side → penalize
+
+            # Accumulate phase visits
+            self._visited_p1 |= (p1 > 0)
+            self._visited_p2 |= ((p2 > 0) & self._visited_p1)
+            self._visited_p3 |= ((p3 > 0) & self._visited_p2)
         else:
             # same vars are 0 when no env is targeting gate 3
             p1_x_reward = p1_y_reward = p1_z_reward = p1_penalty = torch.zeros(self.num_envs, device=self.device)
             p2_reward = torch.zeros(self.num_envs, device=self.device)
             p3_x_reward = p3_y_reward = p3_z_reward = p3_penalty = torch.zeros(self.num_envs, device=self.device)
+
+        # Per-step penalty while targeting gate 3 — prevents indefinite phase farming
+        gate3_time_penalty = (self.env._idx_wp == 3).float()
+
+        # Sequence bonus: fires when gate 3 is passed having visited p1→p2→p3 in order.
+        # Computed outside the if/else because _idx_wp is already incremented to 4 at gate pass time.
+        powerloop_sequence = (gate3_passed & self._visited_p1 & self._visited_p2 & self._visited_p3).float()
+        completed = powerloop_sequence.bool()
+        self._visited_p1[completed] = False
+        self._visited_p2[completed] = False
+        self._visited_p3[completed] = False
 
 
         if self.cfg.is_train:
@@ -258,6 +280,8 @@ class DefaultQuadcopterStrategy:
                 "p3_y_reward": p3_y_reward * self.env.rew['p3_y_reward_reward_scale'],  # Phase 3: centering in y
                 "p3_z_reward": p3_z_reward * self.env.rew['p3_z_reward_reward_scale'],  # Phase 3: descending
                 "p3_penalty":  p3_penalty  * self.env.rew['p3_penalty_reward_scale'],   # Phase 3: flying back to wrong side
+                "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
+                "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3
                 "lap_time_bonus": lap_time_bonus * self.env.rew['lap_time_bonus_reward_scale'],
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
@@ -421,6 +445,11 @@ class DefaultQuadcopterStrategy:
         if crashed_mask.any():
             waypoint_indices = torch.where(crashed_mask, self.env._idx_wp[env_ids], waypoint_indices)
 
+        # For timed-out envs: reset to the gate they were stuck at
+        timeout_mask = self.env.reset_time_outs[env_ids]
+        if timeout_mask.any():
+            waypoint_indices = torch.where(timeout_mask, self.env._idx_wp[env_ids], waypoint_indices)
+
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
         y0_wp = self.env._waypoints[waypoint_indices][:, 1]
@@ -522,6 +551,10 @@ class DefaultQuadcopterStrategy:
         self.env._prev_x_drone_wrt_gate[env_ids] = 1.0
 
         self.env._crashed[env_ids] = 0
+
+        self._visited_p1[env_ids] = False
+        self._visited_p2[env_ids] = False
+        self._visited_p3[env_ids] = False
 
         # Domain randomization: enabled after 5500 iterations
         if domain_randomization:
