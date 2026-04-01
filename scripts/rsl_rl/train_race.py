@@ -132,7 +132,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     p1_y_reward_reward_scale =  0.6   # Phase 1: away from gate 2 in y (world +x)
     p1_z_reward_reward_scale =  1.0   # Phase 1: climbing (world +z)
     p1_penalty_reward_scale  = -1.0   # Phase 1: sinking or going deeper
-    p2_reward_reward_scale   =  1.5   # Phase 2: arc toward correct side (world +y)
+    p2_x_reward_reward_scale        =  1.5   # Phase 2: arc toward correct side (world +y)
+    p2_z_reward_reward_scale      =  1.0   # Phase 2: descending while arcing (tightens loop)
+    p2_z_penalty_reward_scale = -1.0   # Phase 2: still climbing in p2
     p3_x_reward_reward_scale =  1.0   # Phase 3: toward gate in x (world -y)
     p3_y_reward_reward_scale =  1.0   # Phase 3: centering in y
     p3_z_reward_reward_scale =  1.0   # Phase 3: descending (world -z)
@@ -155,7 +157,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'p1_y_reward_reward_scale': p1_y_reward_reward_scale,
         'p1_z_reward_reward_scale': p1_z_reward_reward_scale,
         'p1_penalty_reward_scale':  p1_penalty_reward_scale,
-        'p2_reward_reward_scale':   p2_reward_reward_scale,
+        'p2_x_reward_reward_scale':        p2_x_reward_reward_scale,
+        'p2_z_reward_reward_scale':      p2_z_reward_reward_scale,
+        'p2_z_penalty_reward_scale': p2_z_penalty_reward_scale,
         'p3_x_reward_reward_scale': p3_x_reward_reward_scale,
         'p3_y_reward_reward_scale': p3_y_reward_reward_scale,
         'p3_z_reward_reward_scale': p3_z_reward_reward_scale,

@@ -230,7 +230,9 @@ class DefaultQuadcopterStrategy:
             # Phase 2: wrong side, above gate height (withdraw_x + approach_z)
             # Drone needs to arc over toward correct side
             p2 = gate3 * withdraw_x * approach_z
-            p2_reward  = p2 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)   # arcing toward correct side (world +y) → reward
+            p2_x_reward  = p2 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)   # arcing toward correct side (world +y) → reward
+            p2_z_reward  = p2 * (-vel_along_gate_z / max_vel_gate3).clamp(0, 1)  # descending while arcing → reward (tightens loop)
+            p2_z_penalty = p2 * (vel_along_gate_z / max_vel_gate3).clamp(0, 1)   # still climbing in p2 → penalize
 
             # Phase 3: correct side, above gate height (approach_x + approach_z)
             # Drone needs to descend toward gate and not fly back
@@ -247,7 +249,7 @@ class DefaultQuadcopterStrategy:
         else:
             # same vars are 0 when no env is targeting gate 3
             p1_x_reward = p1_y_reward = p1_z_reward = p1_penalty = torch.zeros(self.num_envs, device=self.device)
-            p2_reward = torch.zeros(self.num_envs, device=self.device)
+            p2_x_reward = p2_z_reward = p2_z_penalty = torch.zeros(self.num_envs, device=self.device)
             p3_x_reward = p3_y_reward = p3_z_reward = p3_penalty = torch.zeros(self.num_envs, device=self.device)
 
         # Per-step penalty while targeting gate 3 — prevents indefinite phase farming
@@ -275,7 +277,9 @@ class DefaultQuadcopterStrategy:
                 "p1_y_reward": p1_y_reward * self.env.rew['p1_y_reward_reward_scale'],  # Phase 1: away from gate 2 in y
                 "p1_z_reward": p1_z_reward * self.env.rew['p1_z_reward_reward_scale'],  # Phase 1: climbing
                 "p1_penalty":  p1_penalty  * self.env.rew['p1_penalty_reward_scale'],   # Phase 1: sinking or going deeper
-                "p2_reward":   p2_reward   * self.env.rew['p2_reward_reward_scale'],    # Phase 2: arc to correct side
+                "p2_x_reward":        p2_x_reward        * self.env.rew['p2_x_reward_reward_scale'],        # Phase 2: arc to correct side
+                "p2_z_reward":      p2_z_reward      * self.env.rew['p2_z_reward_reward_scale'],      # Phase 2: descending while arcing
+                "p2_z_penalty": p2_z_penalty * self.env.rew['p2_z_penalty_reward_scale'], # Phase 2: still climbing
                 "p3_x_reward": p3_x_reward * self.env.rew['p3_x_reward_reward_scale'],  # Phase 3: toward gate in x
                 "p3_y_reward": p3_y_reward * self.env.rew['p3_y_reward_reward_scale'],  # Phase 3: centering in y
                 "p3_z_reward": p3_z_reward * self.env.rew['p3_z_reward_reward_scale'],  # Phase 3: descending
