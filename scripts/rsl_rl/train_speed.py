@@ -121,7 +121,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reward scales
     passing_gate_reward_scale = 20.0
     lap_complete_reward_scale = 50.0
-    lap_time_bonus_reward_scale = 800.0  # Speed bonus on top of flat lap_complete reward
+    lap_time_bonus_reward_scale = 900.0  # Speed bonus on top of flat lap_complete reward
     progress_goal_reward_scale = 1.0
     yaw_reward_scale = 0.05
     crash_reward = -15.0

@@ -121,16 +121,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reward scales
     passing_gate_reward_scale = 20.0
     lap_complete_reward_scale = 50.0
-    lap_time_bonus_reward_scale = 200.0  # Speed bonus on top of flat lap_complete reward
+    lap_time_bonus_reward_scale = 800.0  # Speed bonus on top of flat lap_complete reward
     progress_goal_reward_scale = 2.0
     yaw_reward_scale = 0.5
-    crash_reward = -6.0
-    death_cost = -20.0
+    crash_reward = -8.0
+    death_cost = -30.0
 
     # Gate 3 powerloop phase scales (use _reward_scale suffix so _episode_sums keys parse correctly)
-    p1_x_reward_reward_scale =  1.2   # Phase 1: toward gate in x (world +y)
-    p1_y_reward_reward_scale =  0.0   # Phase 1: away from gate 2 in y (world +x)
-    p1_z_reward_reward_scale =  2.5   # Phase 1: climbing (world +z)
+    p1_x_reward_reward_scale =  1.0   # Phase 1: toward gate in x (world +y)
+    p1_y_reward_reward_scale =  0.01   # Phase 1: away from gate 2 in y (world +x)
+    p1_z_reward_reward_scale =  2.0   # Phase 1: climbing (world +z)
     p1_penalty_reward_scale  = -1.0   # Phase 1: sinking or going deeper
     p2_x_reward_reward_scale =  1.5   # Phase 2: arc toward correct side (world +y)
     p2_z_reward_reward_scale =  1.5   # Phase 2: descending while arcing (tightens loop)
