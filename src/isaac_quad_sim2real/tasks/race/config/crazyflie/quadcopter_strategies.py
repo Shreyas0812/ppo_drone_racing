@@ -78,6 +78,11 @@ class DefaultQuadcopterStrategy:
         self._visited_p3 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._powerloop_done_this_lap = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
+        # 3-lap race tracking (active after 5000 iterations)
+        self._total_gates_passed = torch.zeros(self.num_envs, dtype=torch.int, device=self.device)
+        self._race_start_time = torch.zeros(self.num_envs, device=self.device)
+        self._had_crash = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
         according to the reward scales you tune in train_race.py. """
@@ -197,6 +202,9 @@ class DefaultQuadcopterStrategy:
         crashed = (torch.norm(contact_forces, dim=-1) > 1e-8).squeeze(1).int()
         mask = (self.env.episode_length_buf > 100).int()
         self.env._crashed = self.env._crashed + crashed * mask
+
+        # Track whether any crash occurred this episode (for 3-lap no-crash bonus)
+        self._had_crash |= (crashed * mask).bool()
         # TODO ----- END -----
 
         ######################################## Dealing with Powerloop at Gate 3 ########################################
@@ -282,6 +290,21 @@ class DefaultQuadcopterStrategy:
         powerloop_time = (current_time - self._powerloop_start_time).clamp(min=0.1)
         powerloop_time_bonus = torch.exp(-powerloop_time / target_powerloop_time) * powerloop_sequence
 
+        # 3-lap race rewards (active after 5000 iterations)
+        it = self.env.iteration if hasattr(self.env, 'iteration') else 0
+        self._total_gates_passed[ids_gate_passed] += 1
+        race_complete = (self._total_gates_passed == 22)  # 7 gates * 3 laps + 1 (gate 0 on return)
+
+        no_crash_bonus = torch.zeros(self.num_envs, device=self.device)
+        race_time_bonus = torch.zeros(self.num_envs, device=self.device)
+        if it > 5000 and race_complete.any():
+            target_race_time = getattr(self.env, 'rew', {}).get('target_race_time', 15.0)
+            race_time = (current_time - self._race_start_time).clamp(min=0.1)
+            race_time_bonus = race_complete.float() * torch.exp(-race_time / target_race_time)
+            no_crash_bonus = race_complete.float() * (~self._had_crash).float()
+            self._total_gates_passed[race_complete] = 0
+            self._race_start_time[race_complete] = current_time[race_complete]
+            self._had_crash[race_complete] = False
 
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
@@ -307,6 +330,8 @@ class DefaultQuadcopterStrategy:
                 "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
                 "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3
                 "lap_time_bonus": lap_time_bonus * self.env.rew['lap_time_bonus_reward_scale'],
+                "race_no_crash_bonus": no_crash_bonus * self.env.rew['race_no_crash_bonus_reward_scale'],
+                "race_time_bonus": race_time_bonus * self.env.rew['race_time_bonus_reward_scale'],
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,
@@ -457,24 +482,25 @@ class DefaultQuadcopterStrategy:
         #         # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
         #         domain_randomization = True
         pool = [0]
-        if it > 1000:
-            # Start Domain Randomization after 1000 iterations (can be adjusted based on training progress)
-            domain_randomization = True
-        elif it > 3500:
+        if it > 4000:
             domain_randomization = False
+        elif it > 2000:
+            # Start Domain Randomization after 2000 iterations (aligned with first randomization in _randomize_parameters)
+            domain_randomization = True
         
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
 
-        # For crashed envs: reset to the gate they crashed at
-        crashed_mask = self.env.reset_terminated[env_ids]
-        if crashed_mask.any():
-            waypoint_indices = torch.where(crashed_mask, self.env._idx_wp[env_ids], waypoint_indices)
+        # For crashed/timed-out envs: reset to the gate they were at.
+        # Disabled after 5000 iterations so every episode is a clean 3-lap race from gate 0.
+        if it <= 5000:
+            crashed_mask = self.env.reset_terminated[env_ids]
+            if crashed_mask.any():
+                waypoint_indices = torch.where(crashed_mask, self.env._idx_wp[env_ids], waypoint_indices)
 
-        # For timed-out envs: reset to the gate they were stuck at
-        timeout_mask = self.env.reset_time_outs[env_ids]
-        if timeout_mask.any():
-            waypoint_indices = torch.where(timeout_mask, self.env._idx_wp[env_ids], waypoint_indices)
+            timeout_mask = self.env.reset_time_outs[env_ids]
+            if timeout_mask.any():
+                waypoint_indices = torch.where(timeout_mask, self.env._idx_wp[env_ids], waypoint_indices)
 
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
@@ -484,7 +510,6 @@ class DefaultQuadcopterStrategy:
 
         x_local = -2.0 * torch.ones(n_reset, device=self.device)
         y_local = torch.zeros(n_reset, device=self.device)
-        z_local = torch.zeros(n_reset, device=self.device)
 
         # rotate local pos to global frame
         cos_theta = torch.cos(theta)
@@ -493,7 +518,9 @@ class DefaultQuadcopterStrategy:
         y_rot = sin_theta * x_local + cos_theta * y_local
         initial_x = x0_wp - x_rot
         initial_y = y0_wp - y_rot
-        initial_z = z_local + z_wp
+
+        at_gate0 = (waypoint_indices == 0)
+        initial_z = torch.where(at_gate0, torch.full((n_reset,), 0.05, device=self.device), z_wp)
 
         default_root_state[:, 0] = initial_x
         default_root_state[:, 1] = initial_y
@@ -584,6 +611,11 @@ class DefaultQuadcopterStrategy:
         self._visited_p3[env_ids] = False
         self._powerloop_done_this_lap[env_ids] = False
 
+        # Reset 3-lap race trackers
+        self._total_gates_passed[env_ids] = 0
+        self._race_start_time[env_ids] = 0.0
+        self._had_crash[env_ids] = False
+
         # Domain randomization: enabled after 5500 iterations
         if domain_randomization:
             self._randomize_parameters(env_ids, it)
@@ -596,22 +628,22 @@ class DefaultQuadcopterStrategy:
         n = len(env_ids)
         cfg = self.cfg
 
-        if iteration == 1001:
+        if iteration == 1501:
             print(f"Starting domain randomization at iteration {iteration} on envs {env_ids.cpu().numpy()}")
 
-        if (iteration > 1000):
+        if (iteration > 2000):
             # TWR +-5%
             twr = cfg.thrust_to_weight * torch.empty(n, device=self.device).uniform_(0.95, 1.05)
             self.env._thrust_to_weight[env_ids] = twr
         
-        if (iteration > 1500):
+        if (iteration > 2500):
             # Aerodynamics: 50%-200%
             k_xy = cfg.k_aero_xy * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
             k_z = cfg.k_aero_z * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
             self.env._K_aero[env_ids, :2] = k_xy.unsqueeze(1)
             self.env._K_aero[env_ids, 2] = k_z
         
-        if (iteration > 2000):
+        if (iteration > 3000):
             # PID gains - roll/pitch: +-15%
             kp_rp = cfg.kp_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
             ki_rp = cfg.ki_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
@@ -620,7 +652,7 @@ class DefaultQuadcopterStrategy:
             self.env._ki_omega[env_ids, :2] = ki_rp.unsqueeze(1)
             self.env._kd_omega[env_ids, :2] = kd_rp.unsqueeze(1)
 
-        if iteration > 2500:
+        if iteration > 3500:
 
             # PID gains - yaw: +-15%
             kp_y = cfg.kp_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
