@@ -123,6 +123,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     lap_complete_reward_scale = 50.0
     lap_time_bonus_reward_scale = 800.0  # Speed bonus on top of flat lap_complete reward
     progress_goal_reward_scale = 2.0
+    vel_to_gate_reward_scale = 1.0   # Velocity component toward next gate, normalized to [0,1]
     yaw_reward_scale = 0.5
     crash_reward = -8.0
     death_cost = -30.0
@@ -151,6 +152,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'lap_time_bonus_reward_scale': lap_time_bonus_reward_scale,
         'target_lap_time': 5.0,
         'progress_goal_reward_scale': progress_goal_reward_scale,
+        'vel_to_gate_reward_scale': vel_to_gate_reward_scale,
+        'max_vel_to_gate': 5.0,
         'progress_norm_scale': 0.05,
         'yaw_angle_scale': 0.5,
         'yaw_reward_scale': yaw_reward_scale,

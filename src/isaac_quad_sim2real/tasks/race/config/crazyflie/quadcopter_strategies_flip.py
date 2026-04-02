@@ -193,6 +193,14 @@ class DefaultQuadcopterStrategy:
 
         self.env._last_distance_to_goal = curr_distance_to_goal.clone()
 
+        # Velocity toward the next gate (world frame): dot(vel, unit_vec_to_gate), normalized to [0,1]
+        to_gate_vec = self.env._desired_pos_w - self.env._robot.data.root_link_pos_w
+        to_gate_dist = torch.linalg.norm(to_gate_vec, dim=1, keepdim=True).clamp(min=0.01)
+        to_gate_dir = to_gate_vec / to_gate_dist
+        max_vel_to_gate = getattr(self.env, 'rew', {}).get('max_vel_to_gate', 5.0)
+        vel_to_gate_reward = ((self.env._robot.data.root_com_lin_vel_w * to_gate_dir).sum(dim=1) / max_vel_to_gate).clamp(0, 1)
+        vel_to_gate_reward = torch.where(gate3_wrong_side_mask, torch.zeros_like(vel_to_gate_reward), vel_to_gate_reward)
+
         ###################################################################################################################################################################
 
 
@@ -376,6 +384,7 @@ class DefaultQuadcopterStrategy:
                 "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
                 "lap_complete": lap_completed_all.float() * self.env.rew['lap_complete_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
+                "vel_to_gate": vel_to_gate_reward * self.env.rew['vel_to_gate_reward_scale'],
                 "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
                 # Gate 3 powerloop phase rewards/penalties
