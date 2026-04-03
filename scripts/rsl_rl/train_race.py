@@ -121,7 +121,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reward scales
     passing_gate_reward_scale = 20.0
     lap_complete_reward_scale = 50.0
-    lap_time_bonus_reward_scale = 800.0  # Speed bonus on top of flat lap_complete reward
+    lap_time_bonus_reward_scale = 500.0  # Speed bonus on top of flat lap_complete reward
     progress_goal_reward_scale = 2.0
     yaw_reward_scale = 0.5
     crash_reward = -8.0
@@ -144,6 +144,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     gate3_time_penalty_reward_scale = -0.05  # Per-step cost while targeting gate 3 (prevents phase farming)
     race_no_crash_bonus_reward_scale = 100.0  # Bonus for completing 3 laps without a crash (active after 5000 iters)
     race_time_bonus_reward_scale = 300.0      # Exponential bonus for finishing 3 laps close to target time
+    gate_miss_reward_scale = 0.0            # One-shot penalty for crossing gate plane outside the opening
 
     rewards = {
         'passing_gate_reward_scale': passing_gate_reward_scale,
@@ -175,6 +176,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'race_no_crash_bonus_reward_scale': race_no_crash_bonus_reward_scale,
         'race_time_bonus_reward_scale': race_time_bonus_reward_scale,
         'target_race_time': 20.0,
+        'gate_miss_reward_scale': gate_miss_reward_scale,
     }
     # TODO ----- END -----
 

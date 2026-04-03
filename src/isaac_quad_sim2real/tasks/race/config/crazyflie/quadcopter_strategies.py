@@ -115,6 +115,7 @@ class DefaultQuadcopterStrategy:
 
         # gate_passed = crossed_plane & y_pass_safely & z_pass_safely & flying_through
         gate_passed = crossed_plane & y_pass_safely & z_pass_safely
+        gate_missed = crossed_plane & ~(y_pass_safely & z_pass_safely)  # crossed plane but outside opening
         # Gate 3 only counts if the powerloop arc was executed: drone must have been above gate
         # height on the wrong side (Phase 2) earlier this episode. Without this, the drone can
         # pass gate 3 via a horizontal detour and never learn the vertical loop.
@@ -293,7 +294,7 @@ class DefaultQuadcopterStrategy:
         # 3-lap race rewards (active after 5000 iterations)
         it = self.env.iteration if hasattr(self.env, 'iteration') else 0
         self._total_gates_passed[ids_gate_passed] += 1
-        race_complete = (self._total_gates_passed == 22)  # 7 gates * 3 laps + 1 (gate 0 on return)
+        race_complete = (self._total_gates_passed == self.env._waypoints.shape[0] * self.env.cfg.max_n_laps + 1)  # 7 gates * 3 laps + gate 0 finish line = 22
 
         no_crash_bonus = torch.zeros(self.num_envs, device=self.device)
         race_time_bonus = torch.zeros(self.num_envs, device=self.device)
@@ -332,6 +333,7 @@ class DefaultQuadcopterStrategy:
                 "lap_time_bonus": lap_time_bonus * self.env.rew['lap_time_bonus_reward_scale'],
                 "race_no_crash_bonus": no_crash_bonus * self.env.rew['race_no_crash_bonus_reward_scale'],
                 "race_time_bonus": race_time_bonus * self.env.rew['race_time_bonus_reward_scale'],
+                "gate_miss": gate_missed.float() * self.env.rew['gate_miss_reward_scale'],  # Penalty for clipping through gate frame
             }
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,
@@ -491,16 +493,7 @@ class DefaultQuadcopterStrategy:
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
 
-        # For crashed/timed-out envs: reset to the gate they were at.
-        # Disabled after 5000 iterations so every episode is a clean 3-lap race from gate 0.
-        if it <= 5000:
-            crashed_mask = self.env.reset_terminated[env_ids]
-            if crashed_mask.any():
-                waypoint_indices = torch.where(crashed_mask, self.env._idx_wp[env_ids], waypoint_indices)
-
-            timeout_mask = self.env.reset_time_outs[env_ids]
-            if timeout_mask.any():
-                waypoint_indices = torch.where(timeout_mask, self.env._idx_wp[env_ids], waypoint_indices)
+        # Always reset to gate 0 regardless of crash or timeout.
 
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]

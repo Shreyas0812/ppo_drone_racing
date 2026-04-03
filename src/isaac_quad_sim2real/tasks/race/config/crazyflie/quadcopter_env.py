@@ -689,8 +689,8 @@ class QuadcopterEnv(DirectRLEnv):
         if not self.cfg.is_train:
             time_out = time_out | ((self._n_gates_passed - 1) // (self._waypoints.shape[0]) >= self.cfg.max_n_laps)
         elif self.iteration > 5000:
-            # During training after 5k iterations, end episode once 3 laps are completed
-            time_out = time_out | (self._yaw_n_laps >= self.cfg.max_n_laps)
+            # During training after 5k iterations, end episode once 3 laps + gate 0 (finish line) are completed
+            time_out = time_out | (self._yaw_n_laps > self.cfg.max_n_laps)
 
         return died, time_out
 
