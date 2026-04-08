@@ -117,6 +117,12 @@ class DefaultQuadcopterStrategy:
         gate_passed = torch.where(at_gate3, gate_passed & self._visited_p2, gate_passed)
         gate3_passed = gate_passed & at_gate3  # capture before _idx_wp is incremented
 
+        # Wrong-side crossing: drone flew through the gate opening in reverse
+        wrong_way_crossed = (
+            (self.env._prev_x_drone_wrt_gate <= 0) & (x_drone_wrt_gate > 0)
+            & y_pass_safely & z_pass_safely
+        )
+
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
         ids_gate_passed = torch.where(gate_passed)[0]
@@ -255,6 +261,7 @@ class DefaultQuadcopterStrategy:
                 "lap_complete": lap_completed_all.float() * self.env.rew['lap_complete_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
+                "wrong_way_gate": wrong_way_crossed.float() * self.env.rew['wrong_way_gate_reward_scale'],
                 "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
                 "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
                 "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3

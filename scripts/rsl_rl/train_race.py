@@ -125,6 +125,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     lap_time_bonus_reward_scale = 0.0
     progress_goal_reward_scale = 2.0
     crash_reward = -6.0
+    wrong_way_gate_reward = -150.0
     death_cost = -20.0
 
     powerloop_sequence_reward_scale = 60.0   # One-shot bonus for completing p1→p2→p3 sequence
@@ -141,6 +142,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'progress_norm_scale': 0.05,
 
         'crash_reward_scale': crash_reward,
+        'wrong_way_gate_reward_scale': wrong_way_gate_reward,
         'death_cost': death_cost,
         'powerloop_sequence_reward_scale': powerloop_sequence_reward_scale,
         'powerloop_time_bonus_reward_scale': powerloop_time_bonus_reward_scale,
