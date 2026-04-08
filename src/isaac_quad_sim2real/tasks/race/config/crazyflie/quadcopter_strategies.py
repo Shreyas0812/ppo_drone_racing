@@ -254,7 +254,6 @@ class DefaultQuadcopterStrategy:
                 "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
                 "lap_complete": lap_completed_all.float() * self.env.rew['lap_complete_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
-                "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
                 "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
                 "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
