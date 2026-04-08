@@ -99,8 +99,8 @@ class DefaultQuadcopterStrategy:
         # gate_passed = (dist_to_gate < 0.6)
 
         crossed_plane = (self.env._prev_x_drone_wrt_gate > 0) & (x_drone_wrt_gate <= 0)
-        y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.72
-        z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.72
+        y_pass_safely = torch.abs(y_drone_wrt_gate) < 0.5
+        z_pass_safely = torch.abs(z_drone_wrt_gate) < 0.5
 
         # Require minimum forward velocity through the gate to reject crash-bounce false positives
         # gate_rot_matrix_pass = matrix_from_quat(self.env._waypoints_quat[self.env._idx_wp])
