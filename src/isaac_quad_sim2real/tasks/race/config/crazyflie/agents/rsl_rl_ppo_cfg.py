@@ -10,7 +10,7 @@ from .rl_cfg import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgo
 
 @configclass
 class QuadcopterPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 24
+    num_steps_per_env = 64
     max_iterations = 200
     save_interval = 50
     experiment_name = "quadcopter_direct"
@@ -24,7 +24,7 @@ class QuadcopterPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         min_std=0.05,
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        value_loss_coef=1.0,
+        value_loss_coef=0.5,
         use_clipped_value_loss=True,
         clip_param=0.2,
         entropy_coef=0.01,
@@ -34,6 +34,6 @@ class QuadcopterPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
-        desired_kl=0.01,
-        max_grad_norm=1.0,
+        desired_kl=0.005,
+        max_grad_norm=0.5,
     )
