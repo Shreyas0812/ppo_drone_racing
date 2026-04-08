@@ -121,13 +121,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reward scales
     passing_gate_reward_scale = 20.0
     lap_complete_reward_scale = 50.0
-    lap_time_bonus_reward_scale = 200.0  # Speed bonus on top of flat lap_complete reward
+    # lap_time_bonus_reward_scale = 200.0  # Speed bonus on top of flat lap_complete reward
+    lap_time_bonus_reward_scale = 0.0
     progress_goal_reward_scale = 2.0
     crash_reward = -6.0
     death_cost = -20.0
 
     powerloop_sequence_reward_scale = 60.0   # One-shot bonus for completing p1→p2→p3 sequence
-    powerloop_time_bonus_reward_scale = 100.0  # Exponential bonus for faster powerloop execution
+    # powerloop_time_bonus_reward_scale = 100.0  # Exponential bonus for faster powerloop execution
+    powerloop_time_bonus_reward_scale = 0.0
     gate3_time_penalty_reward_scale = -0.05  # Per-step cost while targeting gate 3 (prevents phase farming)
 
     rewards = {
