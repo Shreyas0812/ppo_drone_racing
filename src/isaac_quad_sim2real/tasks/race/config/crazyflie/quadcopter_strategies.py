@@ -201,53 +201,23 @@ class DefaultQuadcopterStrategy:
 
         ######################################## Dealing with Powerloop at Gate 3 ########################################
 
-        # Wrong side penalty: penalize being front the gate and moving towards it
-
-        gate_rot_matrix = matrix_from_quat(self.env._waypoints_quat[self.env._idx_wp])  # [num_envs, 3, 3]
-        drone_vel_w = self.env._robot.data.root_com_lin_vel_w  # world frame [num_envs, 3]
-
-        # Project world-frame velocity onto each gate axis (dot product is frame-invariant)
-        vel_along_gate_x = (drone_vel_w * gate_rot_matrix[:, :, 0]).sum(dim=1)  # along gate x (pass-through direction)
-        vel_along_gate_y = (drone_vel_w * gate_rot_matrix[:, :, 1]).sum(dim=1)  # along gate y (lateral)
-        vel_along_gate_z = (drone_vel_w * gate_rot_matrix[:, :, 2]).sum(dim=1)  # along gate z (vertical in gate frame)
+        # Phase tracking for powerloop sequence bonus (position-based, no velocity)
+        gate3 = (self.env._idx_wp == 3).float()
 
         approach_x = (x_drone_wrt_gate > 0).float()
         withdraw_x = (x_drone_wrt_gate <= 0).float()
-
-        approach_y = (y_drone_wrt_gate > 0).float()
-        withdraw_y = (y_drone_wrt_gate <= 0).float()
 
         # Threshold at 0.5m above gate center = gate top (gate_side=1.0m, so top is at z_drone_wrt_gate=0.5)
         approach_z = (z_drone_wrt_gate > 0.6).float()
         withdraw_z = (z_drone_wrt_gate <= 0.6).float()
 
-        gate3 = (self.env._idx_wp == 3).float()
-
-        max_vel_gate3 = getattr(self.env, 'rew', {}).get('max_vel_gate3', 5.0)
-
         if (self.env._idx_wp == 3).any():
-            # Phase 1: wrong side, below gate height (withdraw_x + withdraw_z)
-            # Drone needs to climb and not go deeper into wrong side
+            # Phase 1: wrong side, below gate height
             p1 = gate3 * withdraw_x * withdraw_z
-            p1_x_reward = p1 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)                               # toward gate in x (world +y) → reward
-            p1_y_reward = p1 * (-vel_along_gate_y / max_vel_gate3).clamp(0, 1)                              # away from gate 2 in y (world +x) → reward
-            p1_z_reward = p1 * (vel_along_gate_z / max_vel_gate3).clamp(0, 1)                               # climbing (world +z) → reward
-            p1_penalty  = p1 * ((-vel_along_gate_z).clamp(min=0) + (-vel_along_gate_x).clamp(min=0)).clamp(max=max_vel_gate3) / max_vel_gate3  # sinking or going deeper → penalize
-
-            # Phase 2: wrong side, above gate height (withdraw_x + approach_z)
-            # Drone needs to arc over toward correct side
+            # Phase 2: wrong side, above gate height
             p2 = gate3 * withdraw_x * approach_z
-            p2_x_reward  = p2 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)   # arcing toward correct side (world +y) → reward
-            p2_z_reward  = p2 * (-vel_along_gate_z / max_vel_gate3).clamp(0, 1)  # descending while arcing → reward (tightens loop)
-            p2_z_penalty = p2 * (vel_along_gate_z / max_vel_gate3).clamp(0, 1)   # still climbing in p2 → penalize
-
-            # Phase 3: correct side, above gate height (approach_x + approach_z)
-            # Drone needs to descend toward gate and not fly back
+            # Phase 3: correct side, above gate height
             p3 = gate3 * approach_x * approach_z
-            p3_x_reward = p3 * (-vel_along_gate_x / max_vel_gate3).clamp(0, 1)                              # toward gate in x (world -y) → reward
-            p3_y_reward = p3 * (-y_drone_wrt_gate.sign() * vel_along_gate_y / max_vel_gate3).clamp(0, 1)   # centering in y → reward
-            p3_z_reward = p3 * (-vel_along_gate_z / max_vel_gate3).clamp(0, 1)                              # descending (world -z) → reward
-            p3_penalty  = p3 * (vel_along_gate_x / max_vel_gate3).clamp(0, 1)                               # flying back to wrong side → penalize
 
             # Accumulate phase visits — start powerloop timer on first entry into phase 1
             newly_entered_p1 = (p1 > 0) & ~self._visited_p1
@@ -255,11 +225,6 @@ class DefaultQuadcopterStrategy:
             self._visited_p1 |= (p1 > 0)
             self._visited_p2 |= ((p2 > 0) & self._visited_p1)
             self._visited_p3 |= ((p3 > 0) & self._visited_p2)
-        else:
-            # same vars are 0 when no env is targeting gate 3
-            p1_x_reward = p1_y_reward = p1_z_reward = p1_penalty = torch.zeros(self.num_envs, device=self.device)
-            p2_x_reward = p2_z_reward = p2_z_penalty = torch.zeros(self.num_envs, device=self.device)
-            p3_x_reward = p3_y_reward = p3_z_reward = p3_penalty = torch.zeros(self.num_envs, device=self.device)
 
         # Per-step penalty while targeting gate 3 — prevents indefinite phase farming
         gate3_time_penalty = (self.env._idx_wp == 3).float()
@@ -291,18 +256,6 @@ class DefaultQuadcopterStrategy:
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "yaw": yaw_reward * self.env.rew['yaw_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
-                # Gate 3 powerloop phase rewards/penalties
-                "p1_x_reward": p1_x_reward * self.env.rew['p1_x_reward_reward_scale'],  # Phase 1: toward gate in x
-                "p1_y_reward": p1_y_reward * self.env.rew['p1_y_reward_reward_scale'],  # Phase 1: away from gate 2 in y
-                "p1_z_reward": p1_z_reward * self.env.rew['p1_z_reward_reward_scale'],  # Phase 1: climbing
-                "p1_penalty":  p1_penalty  * self.env.rew['p1_penalty_reward_scale'],   # Phase 1: sinking or going deeper
-                "p2_x_reward":        p2_x_reward        * self.env.rew['p2_x_reward_reward_scale'],        # Phase 2: arc to correct side
-                "p2_z_reward":      p2_z_reward      * self.env.rew['p2_z_reward_reward_scale'],      # Phase 2: descending while arcing
-                "p2_z_penalty": p2_z_penalty * self.env.rew['p2_z_penalty_reward_scale'], # Phase 2: still climbing
-                "p3_x_reward": p3_x_reward * self.env.rew['p3_x_reward_reward_scale'],  # Phase 3: toward gate in x
-                "p3_y_reward": p3_y_reward * self.env.rew['p3_y_reward_reward_scale'],  # Phase 3: centering in y
-                "p3_z_reward": p3_z_reward * self.env.rew['p3_z_reward_reward_scale'],  # Phase 3: descending
-                "p3_penalty":  p3_penalty  * self.env.rew['p3_penalty_reward_scale'],   # Phase 3: flying back to wrong side
                 "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
                 "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
                 "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3
