@@ -402,25 +402,25 @@ class DefaultQuadcopterStrategy:
         # Gate 3 is unlocked separately as it requires the powerloop height behavior.
         domain_randomization = False
         it = self.env.iteration if hasattr(self.env, 'iteration') else 0
-        # if it < 1500:
-        #     # Gate 0 only
-        #     pool = [0]
-        # elif it < 2500:
-        #     # Gates 0, 1, and 3 (powerloop segment unlocked)
-        #     pool = [0, 1, 3]
-        # else:
-        #     # All gates
-        #     pool = list(range(self.env._waypoints.shape[0]))
+        if it < 1500:
+            # Gate 0 only
+            pool = [0]
+        elif it < 2500:
+            # Gates 0, 1, and 3 (powerloop segment unlocked)
+            pool = [0, 1, 3]
+        else:
+            # All gates
+            pool = list(range(self.env._waypoints.shape[0]))
 
-        #     if it > 5000:
-        #         # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
-        #         domain_randomization = True
-        pool = [0]
-        if it > 1000:
-            # Start Domain Randomization after 1000 iterations (can be adjusted based on training progress)
-            domain_randomization = True
-        elif it > 3500:
-            domain_randomization = False
+            if it > 5000:
+                # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
+                domain_randomization = True
+        # pool = [0]
+        # if it > 1000:
+        #     # Start Domain Randomization after 1000 iterations (can be adjusted based on training progress)
+        #     domain_randomization = True
+        # elif it > 3500:
+        #     domain_randomization = False
         
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
@@ -431,9 +431,9 @@ class DefaultQuadcopterStrategy:
             waypoint_indices = torch.where(crashed_mask, self.env._idx_wp[env_ids], waypoint_indices)
 
         # For timed-out envs: reset to the gate they were stuck at
-        timeout_mask = self.env.reset_time_outs[env_ids]
-        if timeout_mask.any():
-            waypoint_indices = torch.where(timeout_mask, self.env._idx_wp[env_ids], waypoint_indices)
+        # timeout_mask = self.env.reset_time_outs[env_ids]
+        # if timeout_mask.any():
+        #     waypoint_indices = torch.where(timeout_mask, self.env._idx_wp[env_ids], waypoint_indices)
 
         # get starting poses behind waypoints
         x0_wp = self.env._waypoints[waypoint_indices][:, 0]
@@ -442,6 +442,10 @@ class DefaultQuadcopterStrategy:
         z_wp = self.env._waypoints[waypoint_indices][:, 2]
 
         x_local = -2.0 * torch.ones(n_reset, device=self.device)
+        # Gate 3 has same yaw as gate 2, so x_local=-2 lands on approach_x (positive x side) —
+        # flip it so the drone spawns on the wrong side (p1 territory) with a clear loop path ahead.
+        gate3_mask = (waypoint_indices == 3)
+        x_local = torch.where(gate3_mask, torch.full((n_reset,), 2.0, device=self.device), x_local)
         y_local = torch.zeros(n_reset, device=self.device)
         z_local = torch.zeros(n_reset, device=self.device)
 
@@ -458,11 +462,16 @@ class DefaultQuadcopterStrategy:
         default_root_state[:, 1] = initial_y
         default_root_state[:, 2] = initial_z
 
-        # Forward momentum so powerloop is feasible right after spawn
+        # Forward momentum toward the gate
         forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.5, 1.0)
-        default_root_state[:, 7] = -forward_speed * cos_theta # world frame velocity in x direction
-        default_root_state[:, 8] = -forward_speed * sin_theta # world frame velocity in y direction
-        default_root_state[:, 9] = 0.0  # velocity in z direction
+        # Gate 3 spawns on the wrong side (p1), so velocity must point toward the gate (+x direction)
+        vel_sign = torch.where(gate3_mask, torch.ones(n_reset, device=self.device), -torch.ones(n_reset, device=self.device))
+        default_root_state[:, 7] = vel_sign * forward_speed * cos_theta
+        default_root_state[:, 8] = vel_sign * forward_speed * sin_theta
+        # Gate 3: spawn with upward velocity to push drone into p2 territory (above gate height)
+        default_root_state[:, 9] = torch.where(gate3_mask,
+            torch.empty(n_reset, device=self.device).uniform_(1.0, 2.0),
+            torch.zeros(n_reset, device=self.device))
 
         # point drone towards the zeroth gate
         initial_yaw = torch.atan2(y0_wp - initial_y, x0_wp - initial_x)
