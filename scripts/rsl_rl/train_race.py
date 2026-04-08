@@ -128,6 +128,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     crash_reward = -0.6
     death_cost = -2.0
 
+    action_penalty_reward_scale = -0.0005     # Penalizes large thrust commands → slower, smoother policy
     powerloop_sequence_reward_scale = 6.0    # One-shot bonus for completing p1→p2→p3 sequence
     # powerloop_time_bonus_reward_scale = 100.0  # Exponential bonus for faster powerloop execution
     powerloop_time_bonus_reward_scale = 0.0
@@ -142,6 +143,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'progress_goal_reward_scale': progress_goal_reward_scale,
         'progress_norm_scale': 0.05,
 
+        'action_penalty_reward_scale': action_penalty_reward_scale,
         'crash_reward_scale': crash_reward,
         'death_cost': death_cost,
         'powerloop_sequence_reward_scale': powerloop_sequence_reward_scale,

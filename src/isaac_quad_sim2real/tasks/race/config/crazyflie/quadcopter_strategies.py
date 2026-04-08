@@ -260,6 +260,7 @@ class DefaultQuadcopterStrategy:
                 "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
                 "lap_complete": lap_completed_all.float() * self.env.rew['lap_complete_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
+                "action_penalty": torch.sum(self.env._actions ** 2, dim=1) * self.env.rew['action_penalty_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
                 "wrong_way_gate": wrong_way_crossed.float() * self.env.rew['wrong_way_gate_reward_scale'],
                 "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
@@ -312,12 +313,6 @@ class DefaultQuadcopterStrategy:
 
         # Previous actions
         prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
-
-        # Number of gates passed (normalized to [0, 1])
-        gates_passed = self.env._n_gates_passed.unsqueeze(1).float() / self.env._waypoints.shape[0]
-
-        # yaw difference to the gate
-        yaw_diff = self._yaw_diff.unsqueeze(1)  # Shape: (num_envs, 1)
 
         # TODO ----- END -----
 
