@@ -302,12 +302,13 @@ class DefaultQuadcopterStrategy:
         # Relative position to current gate in gate frame
         drone_pos_gate_frame = self.env._pose_drone_wrt_gate
 
-        # Relative position to current gate in body frame
-        # gate_pos_b, _ = subtract_frame_transforms(
-        #     self.env._robot.data.root_link_pos_w,
-        #     self.env._robot.data.root_quat_w,
-        #     current_gate_pos_w
-        # )
+        # Relative position to next gate in current gate frame (lookahead)
+        next_gate_idx = (self.env._idx_wp + 1) % self.env._waypoints.shape[0]
+        next_gate_pos_gate_frame, _ = subtract_frame_transforms(
+            self.env._waypoints[self.env._idx_wp, :3],
+            self.env._waypoints_quat[self.env._idx_wp, :],
+            self.env._waypoints[next_gate_idx, :3]
+        )
 
         # Previous actions
         prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
@@ -323,13 +324,12 @@ class DefaultQuadcopterStrategy:
         obs = torch.cat(
             # TODO ----- START ----- List your observation tensors here to be concatenated together
             [
-                drone_lin_vel_b,    # velocity in the body frame (3 dims)
-                drone_ang_vel_b,    # angular velocity in the body frame (3 dims)
-                drone_quat_w,       # quaternion in the world frame (4 dims)
-                drone_pos_gate_frame,
-                gates_passed,       # number of gates passed (1 dim)
-                yaw_diff,          # yaw difference to the gate (1 dim)
-                prev_actions,       # previous actions (4 dims)
+                drone_lin_vel_b,          # velocity in the body frame (3 dims)
+                drone_ang_vel_b,          # angular velocity in the body frame (3 dims)
+                drone_quat_w,             # quaternion in the world frame (4 dims)
+                drone_pos_gate_frame,     # relative position to current gate in gate frame (3 dims)
+                next_gate_pos_gate_frame, # relative position to next gate in current gate frame (3 dims)
+                prev_actions,             # previous actions (4 dims)
             ],
             # TODO ----- END -----
             dim=-1,
