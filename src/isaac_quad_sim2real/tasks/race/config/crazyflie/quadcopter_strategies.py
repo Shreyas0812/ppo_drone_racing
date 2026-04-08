@@ -442,7 +442,10 @@ class DefaultQuadcopterStrategy:
         gate3_mask = (waypoint_indices == 3)
         x_local = torch.where(gate3_mask, torch.full((n_reset,), 2.0, device=self.device), x_local)
         y_local = torch.zeros(n_reset, device=self.device)
-        z_local = torch.zeros(n_reset, device=self.device)
+
+        # 20% of resets spawn near the ground so the policy learns takeoff from ground level
+        ground_start = torch.rand(n_reset, device=self.device) < 0.2
+        z_local = torch.where(ground_start, -z_wp + 0.05, torch.zeros(n_reset, device=self.device))
 
         # rotate local pos to global frame
         cos_theta = torch.cos(theta)
