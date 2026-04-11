@@ -217,6 +217,8 @@ class DefaultQuadcopterStrategy:
         approach_z = (z_drone_wrt_gate > 0.6).float()
         withdraw_z = (z_drone_wrt_gate <= 0.6).float()
 
+        newly_entered_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
         if (self.env._idx_wp == 3).any():
             # Phase 1: wrong side, below gate height
             p1 = gate3 * withdraw_x * withdraw_z
@@ -227,6 +229,7 @@ class DefaultQuadcopterStrategy:
 
             # Accumulate phase visits — start powerloop timer on first entry into phase 1
             newly_entered_p1 = (p1 > 0) & ~self._visited_p1
+            newly_entered_p2 = (p2 > 0) & ~self._visited_p2 & self._visited_p1
             self._powerloop_start_time[newly_entered_p1] = current_time[newly_entered_p1]
             self._visited_p1 |= (p1 > 0)
             self._visited_p2 |= ((p2 > 0) & self._visited_p1)
@@ -260,9 +263,9 @@ class DefaultQuadcopterStrategy:
                 "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
                 "lap_complete": lap_completed_all.float() * self.env.rew['lap_complete_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
-                "action_penalty": torch.sum(self.env._actions ** 2, dim=1) * self.env.rew['action_penalty_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
                 "wrong_way_gate": wrong_way_crossed.float() * self.env.rew['wrong_way_gate_reward_scale'],
+                "powerloop_p2_entry": newly_entered_p2.float() * self.env.rew['powerloop_p2_entry_reward_scale'],  # One-time bonus on first p2 entry
                 "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
                 "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
                 "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3
@@ -397,11 +400,17 @@ class DefaultQuadcopterStrategy:
         # Gate 3 is unlocked separately as it requires the powerloop height behavior.
         domain_randomization = False
         it = self.env.iteration if hasattr(self.env, 'iteration') else 0
-        if it < 1500:
+        if it < 500:
             # Gate 0 only
             pool = [0]
+        elif it < 1000:
+            # Introduce gate 3 at 25% — drone learns powerloop early without being overwhelmed
+            pool = [0, 0, 0, 3]
+        elif it < 1500:
+            # Gate 3 at 50%
+            pool = [0, 3]
         elif it < 2500:
-            # Gates 0, 1, and 3 (powerloop segment unlocked)
+            # All gates including 1 and 2
             pool = [0, 1, 3]
         else:
             # All gates
@@ -437,10 +446,12 @@ class DefaultQuadcopterStrategy:
         z_wp = self.env._waypoints[waypoint_indices][:, 2]
 
         x_local = -2.0 * torch.ones(n_reset, device=self.device)
-        # Gate 3 has same yaw as gate 2, so x_local=-2 lands on approach_x (positive x side) —
-        # flip it so the drone spawns on the wrong side (p1 territory) with a clear loop path ahead.
+        # Gate 3 has same yaw as gate 2, so x_local=-2 lands on approach_x (positive x side).
+        # 20% of gate 3 resets spawn on the wrong side (p1 territory) to practice the full loop.
+        # The other 80% spawn on the approach side (positive x) for p3 practice.
         gate3_mask = (waypoint_indices == 3)
-        x_local = torch.where(gate3_mask, torch.full((n_reset,), 2.0, device=self.device), x_local)
+        gate3_wrong_side = gate3_mask & (torch.rand(n_reset, device=self.device) < 0.2)
+        x_local = torch.where(gate3_wrong_side, torch.full((n_reset,), 2.0, device=self.device), x_local)
         y_local = torch.zeros(n_reset, device=self.device)
 
         # 20% of resets spawn near the ground so the policy learns takeoff from ground level
@@ -462,12 +473,12 @@ class DefaultQuadcopterStrategy:
 
         # Forward momentum toward the gate
         forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.5, 1.0)
-        # Gate 3 spawns on the wrong side (p1), so velocity must point toward the gate (+x direction)
-        vel_sign = torch.where(gate3_mask, torch.ones(n_reset, device=self.device), -torch.ones(n_reset, device=self.device))
+        # Wrong-side gate 3 spawns need velocity toward the gate (+x); all others use -x
+        vel_sign = torch.where(gate3_wrong_side, torch.ones(n_reset, device=self.device), -torch.ones(n_reset, device=self.device))
         default_root_state[:, 7] = vel_sign * forward_speed * cos_theta
         default_root_state[:, 8] = vel_sign * forward_speed * sin_theta
-        # Gate 3: spawn with upward velocity to push drone into p2 territory (above gate height)
-        default_root_state[:, 9] = torch.where(gate3_mask,
+        # Wrong-side gate 3: upward velocity to push drone into p2 territory (above gate height)
+        default_root_state[:, 9] = torch.where(gate3_wrong_side,
             torch.empty(n_reset, device=self.device).uniform_(1.0, 2.0),
             torch.zeros(n_reset, device=self.device))
 
