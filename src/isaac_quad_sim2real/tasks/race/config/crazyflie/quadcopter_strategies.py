@@ -70,13 +70,15 @@ class DefaultQuadcopterStrategy:
         # self._last_gate_x = torch.zeros(self.num_envs, device=self.device)
         # self._powerloop_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._lap_start_time = torch.zeros(self.num_envs, device=self.device)
-        self._powerloop_start_time = torch.zeros(self.num_envs, device=self.device)
 
-        # Powerloop phase sequence tracking
-        self._visited_p1 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self._visited_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self._visited_p3 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self._powerloop_done_this_lap = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.is_powerloop = (self.cfg.track_name == 'powerloop')
+        if self.is_powerloop:
+            self._powerloop_start_time = torch.zeros(self.num_envs, device=self.device)
+            # Powerloop phase sequence tracking
+            self._visited_p1 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self._visited_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self._visited_p3 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self._powerloop_done_this_lap = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
     def get_rewards(self) -> torch.Tensor:
         """get_rewards() is called per timestep. This is where you define your reward structure and compute them
@@ -110,12 +112,13 @@ class DefaultQuadcopterStrategy:
 
         # gate_passed = crossed_plane & y_pass_safely & z_pass_safely & flying_through
         gate_passed = crossed_plane & y_pass_safely & z_pass_safely
-        # Gate 3 only counts if the powerloop arc was executed: drone must have been above gate
-        # height on the wrong side (Phase 2) earlier this episode. Without this, the drone can
-        # pass gate 3 via a horizontal detour and never learn the vertical loop.
-        at_gate3 = (self.env._idx_wp == 3)
-        gate_passed = torch.where(at_gate3, gate_passed & self._visited_p2, gate_passed)
-        gate3_passed = gate_passed & at_gate3  # capture before _idx_wp is incremented
+        if self.is_powerloop:
+            # Gate 3 only counts if the powerloop arc was executed: drone must have been above gate
+            # height on the wrong side (Phase 2) earlier this episode. Without this, the drone can
+            # pass gate 3 via a horizontal detour and never learn the vertical loop.
+            at_gate3 = (self.env._idx_wp == 3)
+            gate_passed = torch.where(at_gate3, gate_passed & self._visited_p2, gate_passed)
+            gate3_passed = gate_passed & at_gate3  # capture before _idx_wp is incremented
 
         # Wrong-side crossing: drone flew through the gate opening in reverse
         wrong_way_crossed = (
@@ -175,10 +178,11 @@ class DefaultQuadcopterStrategy:
 
         progress = torch.tanh((prev_distance_to_goal - curr_distance_to_goal) / progress_norm_scale)
 
-        # Remove Euclidean progress for gate 3 when on wrong side — it pulls the drone
-        # toward gate 3 from y<0 without doing the loop.
-        gate3_wrong_side_mask = (self.env._idx_wp == 3) & (x_drone_wrt_gate <= 0)
-        progress = torch.where(gate3_wrong_side_mask, torch.zeros_like(progress), progress)
+        if self.is_powerloop:
+            # Remove Euclidean progress for gate 3 when on wrong side — it pulls the drone
+            # toward gate 3 from y<0 without doing the loop.
+            gate3_wrong_side_mask = (self.env._idx_wp == 3) & (x_drone_wrt_gate <= 0)
+            progress = torch.where(gate3_wrong_side_mask, torch.zeros_like(progress), progress)
 
         self.env._last_distance_to_goal = curr_distance_to_goal.clone()
 
@@ -207,54 +211,55 @@ class DefaultQuadcopterStrategy:
 
         ######################################## Dealing with Powerloop at Gate 3 ########################################
 
-        # Phase tracking for powerloop sequence bonus (position-based, no velocity)
-        gate3 = (self.env._idx_wp == 3).float()
+        if self.is_powerloop:
+            # Phase tracking for powerloop sequence bonus (position-based, no velocity)
+            gate3 = (self.env._idx_wp == 3).float()
 
-        approach_x = (x_drone_wrt_gate > 0).float()
-        withdraw_x = (x_drone_wrt_gate <= 0).float()
+            approach_x = (x_drone_wrt_gate > 0).float()
+            withdraw_x = (x_drone_wrt_gate <= 0).float()
 
-        # Threshold at 0.5m above gate center = gate top (gate_side=1.0m, so top is at z_drone_wrt_gate=0.5)
-        approach_z = (z_drone_wrt_gate > 0.6).float()
-        withdraw_z = (z_drone_wrt_gate <= 0.6).float()
+            # Threshold at 0.5m above gate center = gate top (gate_side=1.0m, so top is at z_drone_wrt_gate=0.5)
+            approach_z = (z_drone_wrt_gate > 0.6).float()
+            withdraw_z = (z_drone_wrt_gate <= 0.6).float()
 
-        newly_entered_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            newly_entered_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
-        if (self.env._idx_wp == 3).any():
-            # Phase 1: wrong side, below gate height
-            p1 = gate3 * withdraw_x * withdraw_z
-            # Phase 2: wrong side, above gate height
-            p2 = gate3 * withdraw_x * approach_z
-            # Phase 3: correct side, above gate height
-            p3 = gate3 * approach_x * approach_z
+            if (self.env._idx_wp == 3).any():
+                # Phase 1: wrong side, below gate height
+                p1 = gate3 * withdraw_x * withdraw_z
+                # Phase 2: wrong side, above gate height
+                p2 = gate3 * withdraw_x * approach_z
+                # Phase 3: correct side, above gate height
+                p3 = gate3 * approach_x * approach_z
 
-            # Accumulate phase visits — start powerloop timer on first entry into phase 1
-            newly_entered_p1 = (p1 > 0) & ~self._visited_p1
-            newly_entered_p2 = (p2 > 0) & ~self._visited_p2 & self._visited_p1
-            self._powerloop_start_time[newly_entered_p1] = current_time[newly_entered_p1]
-            self._visited_p1 |= (p1 > 0)
-            self._visited_p2 |= ((p2 > 0) & self._visited_p1)
-            self._visited_p3 |= ((p3 > 0) & self._visited_p2)
+                # Accumulate phase visits — start powerloop timer on first entry into phase 1
+                newly_entered_p1 = (p1 > 0) & ~self._visited_p1
+                newly_entered_p2 = (p2 > 0) & ~self._visited_p2 & self._visited_p1
+                self._powerloop_start_time[newly_entered_p1] = current_time[newly_entered_p1]
+                self._visited_p1 |= (p1 > 0)
+                self._visited_p2 |= ((p2 > 0) & self._visited_p1)
+                self._visited_p3 |= ((p3 > 0) & self._visited_p2)
 
-        # Per-step penalty while targeting gate 3 — prevents indefinite phase farming
-        gate3_time_penalty = (self.env._idx_wp == 3).float()
+            # Per-step penalty while targeting gate 3 — prevents indefinite phase farming
+            gate3_time_penalty = (self.env._idx_wp == 3).float()
 
-        # Sequence bonus: fires when gate 3 is passed having visited p1→p2→p3 in order.
-        # Computed outside the if/else because _idx_wp is already incremented to 4 at gate pass time.
-        powerloop_sequence = (gate3_passed & self._visited_p1 & self._visited_p2 & self._visited_p3).float()
-        completed = powerloop_sequence.bool()
-        self._visited_p1[completed] = False
-        self._visited_p2[completed] = False
-        self._visited_p3[completed] = False
-        self._powerloop_done_this_lap |= completed
+            # Sequence bonus: fires when gate 3 is passed having visited p1→p2→p3 in order.
+            # Computed outside the if/else because _idx_wp is already incremented to 4 at gate pass time.
+            powerloop_sequence = (gate3_passed & self._visited_p1 & self._visited_p2 & self._visited_p3).float()
+            completed = powerloop_sequence.bool()
+            self._visited_p1[completed] = False
+            self._visited_p2[completed] = False
+            self._visited_p3[completed] = False
+            self._powerloop_done_this_lap |= completed
 
-        # Gate lap_complete on powerloop having been done this lap; reset flag on lap completion
-        lap_completed_all = lap_completed_all & self._powerloop_done_this_lap
-        self._powerloop_done_this_lap[lap_completed_all] = False
+            # Gate lap_complete on powerloop having been done this lap; reset flag on lap completion
+            lap_completed_all = lap_completed_all & self._powerloop_done_this_lap
+            self._powerloop_done_this_lap[lap_completed_all] = False
 
-        # Powerloop time bonus: exponential bonus for completing the loop quickly
-        target_powerloop_time = getattr(self.env, 'rew', {}).get('target_powerloop_time', 2.5)
-        powerloop_time = (current_time - self._powerloop_start_time).clamp(min=0.1)
-        powerloop_time_bonus = torch.exp(-powerloop_time / target_powerloop_time) * powerloop_sequence
+            # Powerloop time bonus: exponential bonus for completing the loop quickly
+            target_powerloop_time = getattr(self.env, 'rew', {}).get('target_powerloop_time', 2.5)
+            powerloop_time = (current_time - self._powerloop_start_time).clamp(min=0.1)
+            powerloop_time_bonus = torch.exp(-powerloop_time / target_powerloop_time) * powerloop_sequence
 
 
         if self.cfg.is_train:
@@ -265,12 +270,15 @@ class DefaultQuadcopterStrategy:
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
                 "wrong_way_gate": wrong_way_crossed.float() * self.env.rew['wrong_way_gate_reward_scale'],
-                "powerloop_p2_entry": newly_entered_p2.float() * self.env.rew['powerloop_p2_entry_reward_scale'],  # One-time bonus on first p2 entry
-                "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
-                "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
-                "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3
                 "lap_time_bonus": lap_time_bonus * self.env.rew['lap_time_bonus_reward_scale'],
             }
+            if self.is_powerloop:
+                rewards.update({
+                    "powerloop_p2_entry": newly_entered_p2.float() * self.env.rew['powerloop_p2_entry_reward_scale'],  # One-time bonus on first p2 entry
+                    "powerloop_sequence": powerloop_sequence * self.env.rew['powerloop_sequence_reward_scale'],  # Bonus for p1→p2→p3 sequence
+                    "powerloop_time_bonus": powerloop_time_bonus * self.env.rew['powerloop_time_bonus_reward_scale'],  # Exponential bonus for faster powerloop
+                    "gate3_time_penalty": gate3_time_penalty * self.env.rew['gate3_time_penalty_reward_scale'],  # Per-step cost while at gate 3
+                })
             reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
             reward = torch.where(self.env.reset_terminated,
                                 torch.ones_like(reward) * self.env.rew['death_cost'], reward)
@@ -408,31 +416,31 @@ class DefaultQuadcopterStrategy:
         # Gate 3 is unlocked separately as it requires the powerloop height behavior.
         domain_randomization = False
         it = self.env.iteration if hasattr(self.env, 'iteration') else 0
-        if it < 500:
-            # Gate 0 only
-            pool = [0]
-        elif it < 1000:
-            # Introduce gate 3 at 25% — drone learns powerloop early without being overwhelmed
-            pool = [0, 0, 0, 3]
-        elif it < 1500:
-            # Gate 3 at 50%
-            pool = [0, 3]
-        elif it < 2500:
-            # All gates including 1 and 2
-            pool = [0, 1, 3]
+        if self.is_powerloop:
+            if it < 500:
+                # Gate 0 only
+                pool = [0]
+            elif it < 1000:
+                # Introduce gate 3 at 25% — drone learns powerloop early without being overwhelmed
+                pool = [0, 0, 0, 3]
+            elif it < 1500:
+                # Gate 3 at 50%
+                pool = [0, 3]
+            elif it < 2500:
+                # All gates including 1 and 2
+                pool = [0, 1, 3]
+            else:
+                # All gates
+                pool = list(range(self.env._waypoints.shape[0]))
+                if it > 5000:
+                    domain_randomization = True
         else:
-            # All gates
-            pool = list(range(self.env._waypoints.shape[0]))
-
-            if it > 5000:
-                # Start Domain Randomization after 5000 iterations (can be adjusted based on training progress)
-                domain_randomization = True
-        # pool = [0]
-        # if it > 1000:
-        #     # Start Domain Randomization after 1000 iterations (can be adjusted based on training progress)
-        #     domain_randomization = True
-        # elif it > 3500:
-        #     domain_randomization = False
+            if it < 500:
+                pool = [0]
+            else:
+                pool = list(range(self.env._waypoints.shape[0]))
+                if it > 5000:
+                    domain_randomization = True
         
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
         waypoint_indices = pool_tensor[torch.randint(0, len(pool), (n_reset,), device=self.device)]
@@ -454,13 +462,14 @@ class DefaultQuadcopterStrategy:
         z_wp = self.env._waypoints[waypoint_indices][:, 2]
 
         x_local = -2.0 * torch.ones(n_reset, device=self.device)
-        # Gate 3 has same yaw as gate 2, so x_local=-2 lands on approach_x (positive x side).
-        # 20% of gate 3 resets spawn on the wrong side (p1 territory) to practice the full loop.
-        # The other 80% spawn on the approach side (positive x) for p3 practice.
-        gate3_mask = (waypoint_indices == 3)
-        gate3_wrong_side = gate3_mask & (torch.rand(n_reset, device=self.device) < 0.2)
-        x_local = torch.where(gate3_wrong_side, torch.full((n_reset,), 2.0, device=self.device), x_local)
         y_local = torch.zeros(n_reset, device=self.device)
+        if self.is_powerloop:
+            # Gate 3 has same yaw as gate 2, so x_local=-2 lands on approach_x (positive x side).
+            # 20% of gate 3 resets spawn on the wrong side (p1 territory) to practice the full loop.
+            # The other 80% spawn on the approach side (positive x) for p3 practice.
+            gate3_mask = (waypoint_indices == 3)
+            gate3_wrong_side = gate3_mask & (torch.rand(n_reset, device=self.device) < 0.2)
+            x_local = torch.where(gate3_wrong_side, torch.full((n_reset,), 2.0, device=self.device), x_local)
 
         # 20% of resets spawn near the ground so the policy learns takeoff from ground level
         ground_start = torch.rand(n_reset, device=self.device) < 0.2
@@ -481,14 +490,18 @@ class DefaultQuadcopterStrategy:
 
         # Forward momentum toward the gate
         forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.5, 1.0)
-        # Wrong-side gate 3 spawns need velocity toward the gate (+x); all others use -x
-        vel_sign = torch.where(gate3_wrong_side, torch.ones(n_reset, device=self.device), -torch.ones(n_reset, device=self.device))
+        if self.is_powerloop:
+            # Wrong-side gate 3 spawns need velocity toward the gate (+x); all others use -x
+            vel_sign = torch.where(gate3_wrong_side, torch.ones(n_reset, device=self.device), -torch.ones(n_reset, device=self.device))
+            # Wrong-side gate 3: upward velocity to push drone into p2 territory (above gate height)
+            default_root_state[:, 9] = torch.where(gate3_wrong_side,
+                torch.empty(n_reset, device=self.device).uniform_(1.0, 2.0),
+                torch.zeros(n_reset, device=self.device))
+        else:
+            vel_sign = -torch.ones(n_reset, device=self.device)
+            default_root_state[:, 9] = 0.0
         default_root_state[:, 7] = vel_sign * forward_speed * cos_theta
         default_root_state[:, 8] = vel_sign * forward_speed * sin_theta
-        # Wrong-side gate 3: upward velocity to push drone into p2 territory (above gate height)
-        default_root_state[:, 9] = torch.where(gate3_wrong_side,
-            torch.empty(n_reset, device=self.device).uniform_(1.0, 2.0),
-            torch.zeros(n_reset, device=self.device))
 
         # point drone towards the zeroth gate
         initial_yaw = torch.atan2(y0_wp - initial_y, x0_wp - initial_x)
@@ -552,7 +565,8 @@ class DefaultQuadcopterStrategy:
         # Reset variables
         self.env._yaw_n_laps[env_ids] = 0
         self._lap_start_time[env_ids] = 0.0
-        self._powerloop_start_time[env_ids] = 0.0
+        if self.is_powerloop:
+            self._powerloop_start_time[env_ids] = 0.0
 
         self.env._pose_drone_wrt_gate[env_ids], _ = subtract_frame_transforms(
             self.env._waypoints[self.env._idx_wp[env_ids], :3],
@@ -564,10 +578,11 @@ class DefaultQuadcopterStrategy:
 
         self.env._crashed[env_ids] = 0
 
-        self._visited_p1[env_ids] = False
-        self._visited_p2[env_ids] = False
-        self._visited_p3[env_ids] = False
-        self._powerloop_done_this_lap[env_ids] = False
+        if self.is_powerloop:
+            self._visited_p1[env_ids] = False
+            self._visited_p2[env_ids] = False
+            self._visited_p3[env_ids] = False
+            self._powerloop_done_this_lap[env_ids] = False
 
         # Domain randomization: enabled after 5500 iterations
         if domain_randomization:

@@ -128,12 +128,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     crash_reward = -0.6
     death_cost = -2.0
 
-    powerloop_p2_entry_reward_scale = 0.5     # One-time bonus for first p2 entry (climb + arc signal)
-    powerloop_sequence_reward_scale = 6.0     # One-shot bonus for completing p1→p2→p3 sequence
-    # powerloop_time_bonus_reward_scale = 100.0  # Exponential bonus for faster powerloop execution
-    powerloop_time_bonus_reward_scale = 0.0
-    gate3_time_penalty_reward_scale = -0.005  # Per-step cost while targeting gate 3 (prevents phase farming)
-
     rewards = {
         'passing_gate_reward_scale': passing_gate_reward_scale,
         'wrong_way_gate_reward_scale': wrong_way_gate_reward,
@@ -142,15 +136,23 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         'target_lap_time': 5.0,
         'progress_goal_reward_scale': progress_goal_reward_scale,
         'progress_norm_scale': 0.05,
-
         'crash_reward_scale': crash_reward,
         'death_cost': death_cost,
-        'powerloop_p2_entry_reward_scale': powerloop_p2_entry_reward_scale,
-        'powerloop_sequence_reward_scale': powerloop_sequence_reward_scale,
-        'powerloop_time_bonus_reward_scale': powerloop_time_bonus_reward_scale,
-        'target_powerloop_time': 1.0,
-        'gate3_time_penalty_reward_scale': gate3_time_penalty_reward_scale,
     }
+
+    if env_cfg.track_name == 'powerloop':
+        powerloop_p2_entry_reward_scale = 0.5     # One-time bonus for first p2 entry (climb + arc signal)
+        powerloop_sequence_reward_scale = 6.0     # One-shot bonus for completing p1→p2→p3 sequence
+        # powerloop_time_bonus_reward_scale = 100.0  # Exponential bonus for faster powerloop execution
+        powerloop_time_bonus_reward_scale = 0.0
+        gate3_time_penalty_reward_scale = -0.005  # Per-step cost while targeting gate 3 (prevents phase farming)
+        rewards.update({
+            'powerloop_p2_entry_reward_scale': powerloop_p2_entry_reward_scale,
+            'powerloop_sequence_reward_scale': powerloop_sequence_reward_scale,
+            'powerloop_time_bonus_reward_scale': powerloop_time_bonus_reward_scale,
+            'target_powerloop_time': 1.0,
+            'gate3_time_penalty_reward_scale': gate3_time_penalty_reward_scale,
+        })
     # TODO ----- END -----
 
     env_cfg.is_train = True
