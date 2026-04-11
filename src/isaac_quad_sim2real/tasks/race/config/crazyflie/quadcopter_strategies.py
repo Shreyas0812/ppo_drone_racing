@@ -488,8 +488,8 @@ class DefaultQuadcopterStrategy:
         default_root_state[:, 1] = initial_y
         default_root_state[:, 2] = initial_z
 
-        # Forward momentum toward the gate
-        forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.5, 1.0)
+        # Forward momentum toward the gate — kept slow for sim-to-real transfer
+        forward_speed = torch.empty(n_reset, device=self.device).uniform_(0.2, 0.5)
         if self.is_powerloop:
             # Wrong-side gate 3 spawns need velocity toward the gate (+x); all others use -x
             vel_sign = torch.where(gate3_wrong_side, torch.ones(n_reset, device=self.device), -torch.ones(n_reset, device=self.device))
