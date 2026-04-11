@@ -285,56 +285,64 @@ class DefaultQuadcopterStrategy:
         return reward
 
     def get_observations(self) -> Dict[str, torch.Tensor]:
-        """Get observations. Read reset_idx() and quadcopter_env.py to see which drone info is extracted from the sim.
-        The following code is an example. You should delete it or heavily modify it once you begin the racing task."""
+        """Get observations including waypoint positions and drone state."""
+        curr_idx = self.env._idx_wp % self.env._waypoints.shape[0]
+        next_idx = (self.env._idx_wp + 1) % self.env._waypoints.shape[0]
 
-        # TODO ----- START ----- Define tensors for your observation space. Be careful with frame transformations
-        #### Basic drone states, modify for your needs)
-        drone_pose_w = self.env._robot.data.root_link_pos_w
-        drone_lin_vel_b = self.env._robot.data.root_com_lin_vel_b
-        drone_quat_w = self.env._robot.data.root_quat_w
+        wp_curr_pos = self.env._waypoints[curr_idx, :3]
+        wp_next_pos = self.env._waypoints[next_idx, :3]
+        quat_curr = self.env._waypoints_quat[curr_idx]
+        quat_next = self.env._waypoints_quat[next_idx]
 
-        ##### Some example observations you may want to explore using
-        # Angular velocities (referred to as body rates)
-        drone_ang_vel_b = self.env._robot.data.root_ang_vel_b  # [roll_rate, pitch_rate, yaw_rate]
+        rot_curr = matrix_from_quat(quat_curr)
+        rot_next = matrix_from_quat(quat_next)
 
-        # Current target gate information
-        current_gate_idx = self.env._idx_wp.unsqueeze(-1).float()       # [num_envs, 1]
-        current_gate_pos_w = self.env._waypoints[self.env._idx_wp, :3]  # World position of current gate [num_envs, 3]
-        current_gate_yaw = self.env._waypoints[self.env._idx_wp, -1].unsqueeze(-1)  # Yaw orientation [num_envs, 1]
+        verts_curr = torch.bmm(self.env._local_square, rot_curr.transpose(1, 2)) + wp_curr_pos.unsqueeze(1) + self.env._terrain.env_origins.unsqueeze(1)
+        verts_next = torch.bmm(self.env._local_square, rot_next.transpose(1, 2)) + wp_next_pos.unsqueeze(1) + self.env._terrain.env_origins.unsqueeze(1)
 
-        # Relative position to current gate in gate frame
-        drone_pos_gate_frame = self.env._pose_drone_wrt_gate
-
-        # Relative position to next gate in current gate frame (lookahead)
-        next_gate_idx = (self.env._idx_wp + 1) % self.env._waypoints.shape[0]
-        next_gate_pos_gate_frame, _ = subtract_frame_transforms(
-            self.env._waypoints[self.env._idx_wp, :3],
-            self.env._waypoints_quat[self.env._idx_wp, :],
-            self.env._waypoints[next_gate_idx, :3]
+        waypoint_pos_b_curr, _ = subtract_frame_transforms(
+            self.env._robot.data.root_link_state_w[:, :3].repeat_interleave(4, dim=0),
+            self.env._robot.data.root_link_state_w[:, 3:7].repeat_interleave(4, dim=0),
+            verts_curr.view(-1, 3)
+        )
+        waypoint_pos_b_next, _ = subtract_frame_transforms(
+            self.env._robot.data.root_link_state_w[:, :3].repeat_interleave(4, dim=0),
+            self.env._robot.data.root_link_state_w[:, 3:7].repeat_interleave(4, dim=0),
+            verts_next.view(-1, 3)
         )
 
-        # Previous actions
-        prev_actions = self.env._previous_actions  # Shape: (num_envs, 4)
+        waypoint_pos_b_curr = waypoint_pos_b_curr.view(self.num_envs, 4, 3)
+        waypoint_pos_b_next = waypoint_pos_b_next.view(self.num_envs, 4, 3)
 
-        # TODO ----- END -----
+        quat_w = self.env._robot.data.root_quat_w
+        attitude_mat = matrix_from_quat(quat_w)
 
         obs = torch.cat(
-            # TODO ----- START ----- List your observation tensors here to be concatenated together
             [
-                drone_lin_vel_b,          # velocity in the body frame (3 dims)
-                drone_ang_vel_b,          # angular velocity in the body frame (3 dims)
-                drone_quat_w,             # quaternion in the world frame (4 dims)
-                drone_pos_gate_frame,     # relative position to current gate in gate frame (3 dims)
-                next_gate_pos_gate_frame, # relative position to next gate in current gate frame (3 dims)
-                prev_actions,             # previous actions (4 dims)
+                self.env._robot.data.root_com_lin_vel_b,			# 3 dim (linear vel in body frame)
+                attitude_mat.view(attitude_mat.shape[0], -1),			# 9 dim (drone rotation matrix)
+                waypoint_pos_b_curr.view(waypoint_pos_b_curr.shape[0], -1),	# 12 dim (corners of current gate)
+                waypoint_pos_b_next.view(waypoint_pos_b_next.shape[0], -1),	# 12 dim (corners of next gate)
             ],
-            # TODO ----- END -----
             dim=-1,
         )
         observations = {"policy": obs}
 
+        # Update yaw tracking
+        rpy = euler_xyz_from_quat(quat_w)
+        yaw_w = wrap_to_pi(rpy[2])
+
+        delta_yaw = yaw_w - self.env._previous_yaw
+        self.env._previous_yaw = yaw_w
+        self.env._yaw_n_laps += torch.where(delta_yaw < -np.pi, 1, 0)
+        self.env._yaw_n_laps -= torch.where(delta_yaw > np.pi, 1, 0)
+
+        self.env.unwrapped_yaw = yaw_w + 2 * np.pi * self.env._yaw_n_laps
+
+        self.env._previous_actions = self.env._actions.clone()
+
         return observations
+
 
     def reset_idx(self, env_ids: Optional[torch.Tensor]):
         """Reset specific environments to initial states."""
