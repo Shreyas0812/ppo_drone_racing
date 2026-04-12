@@ -128,6 +128,10 @@ class DefaultQuadcopterStrategy:
 
         self.env._prev_x_drone_wrt_gate = x_drone_wrt_gate.clone()
 
+        # Centering bonus: scale gate reward by how close to center the drone passed (Gaussian, sigma=0.2m)
+        # Pure sparse signal — only nonzero when gate_passed. Stays at 1.0 for perfect center, ~0.01 at 0.4m offset.
+        gate_centering = torch.exp(-(y_drone_wrt_gate**2 + z_drone_wrt_gate**2) / (2 * 0.2**2))
+
         ids_gate_passed = torch.where(gate_passed)[0]
         self.env._idx_wp[ids_gate_passed] = (self.env._idx_wp[ids_gate_passed] + 1) % self.env._waypoints.shape[0]
 
@@ -265,7 +269,7 @@ class DefaultQuadcopterStrategy:
         if self.cfg.is_train:
             # TODO ----- START ----- Compute per-timestep rewards by multiplying with your reward scales (in train_race.py)
             rewards = {
-                "passing_gate": gate_passed.int() * self.env.rew['passing_gate_reward_scale'],
+                "passing_gate": gate_passed.float() * gate_centering * self.env.rew['passing_gate_reward_scale'],
                 "lap_complete": lap_completed_all.float() * self.env.rew['lap_complete_reward_scale'],
                 "progress_goal": progress * self.env.rew['progress_goal_reward_scale'],
                 "crash": crashed * self.env.rew['crash_reward_scale'],
