@@ -410,6 +410,7 @@ class DefaultQuadcopterStrategy:
         # Reset action buffers
         self.env._actions[env_ids] = 0.0
         self.env._previous_actions[env_ids] = 0.0
+        self.env._action_delay_buffer[:, env_ids, :] = 0.0
         self.env._previous_yaw[env_ids] = 0.0
         self.env._motor_speeds[env_ids] = 0.0
         self.env._previous_omega_meas[env_ids] = 0.0
@@ -637,7 +638,6 @@ class DefaultQuadcopterStrategy:
             self.env._kd_omega[env_ids, :2] = kd_rp.unsqueeze(1)
 
         if iteration > 2500:
-
             # PID gains - yaw: +-15%
             kp_y = cfg.kp_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
             ki_y = cfg.ki_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)

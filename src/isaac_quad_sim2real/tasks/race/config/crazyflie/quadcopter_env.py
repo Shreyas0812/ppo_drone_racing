@@ -254,6 +254,14 @@ class QuadcopterEnv(DirectRLEnv):
         self._previous_actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self._previous_yaw = torch.zeros(self.num_envs, device=self.device)
 
+        #### NOTE: ADDED BY SHREYAS FOR SIMULATING ACTION DELAY -- REMOVE LATER IF NOT NEEDED
+        # Action delay buffer: simulates ~20ms radio + firmware latency (2 steps at dt=0.01*decimation)
+        self._action_delay_steps = 2
+        self._action_delay_buffer = torch.zeros(
+            self._action_delay_steps, self.num_envs, self.cfg.action_space, device=self.device
+        )
+        ##### NOTE: END
+
         self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._wrench_des = torch.zeros(self.num_envs, 4, device=self.device)
@@ -629,7 +637,17 @@ class QuadcopterEnv(DirectRLEnv):
     ##########################################################
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        self._actions = actions.clone().clamp(-1.0, 1.0)    # actions come directly from the NN
+        incoming = actions.clone().clamp(-1.0, 1.0)
+
+        if self.cfg.is_train:
+            # Shift buffer: index 0 = oldest (applied), index -1 = newest (just received)
+            delayed_action = self._action_delay_buffer[0].clone()
+            self._action_delay_buffer = torch.roll(self._action_delay_buffer, shifts=-1, dims=0)
+            self._action_delay_buffer[-1] = incoming
+            self._actions = delayed_action
+        else:
+            self._actions = incoming
+
         self._actions = self.cfg.beta * self._actions + (1 - self.cfg.beta) * self._previous_actions
 
         # Store current actions for next timestep (for action smoothing and observations)
