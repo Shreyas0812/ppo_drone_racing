@@ -449,7 +449,8 @@ class DefaultQuadcopterStrategy:
             else:
                 # All gates
                 pool = list(range(self.env._waypoints.shape[0]))
-                if it > 5000:
+                if it > 3000:
+                    # Start DR after full gate curriculum is unlocked (>2500 iters)
                     domain_randomization = True
         else:
             if it < 500:
