@@ -329,12 +329,24 @@ class DefaultQuadcopterStrategy:
         quat_w = self.env._robot.data.root_quat_w
         attitude_mat = matrix_from_quat(quat_w)
 
+        lin_vel = self.env._robot.data.root_com_lin_vel_b
+        rot_mat = attitude_mat.view(attitude_mat.shape[0], -1)
+        corners_curr = waypoint_pos_b_curr.view(waypoint_pos_b_curr.shape[0], -1)
+        corners_next = waypoint_pos_b_next.view(waypoint_pos_b_next.shape[0], -1)
+
+        if self.cfg.is_train:
+            # Observation noise to bridge sim-to-real sensor gap
+            lin_vel    = lin_vel    + torch.randn_like(lin_vel)    * 0.05   # Vicon velocity: ~5 cm/s std
+            rot_mat    = rot_mat    + torch.randn_like(rot_mat)    * 0.01   # Vicon orientation: ~0.6 deg std
+            corners_curr = corners_curr + torch.randn_like(corners_curr) * 0.03  # Gate corners: ~3 cm std
+            corners_next = corners_next + torch.randn_like(corners_next) * 0.03
+
         obs = torch.cat(
             [
-                self.env._robot.data.root_com_lin_vel_b,			# 3 dim (linear vel in body frame)
-                attitude_mat.view(attitude_mat.shape[0], -1),			# 9 dim (drone rotation matrix)
-                waypoint_pos_b_curr.view(waypoint_pos_b_curr.shape[0], -1),	# 12 dim (corners of current gate)
-                waypoint_pos_b_next.view(waypoint_pos_b_next.shape[0], -1),	# 12 dim (corners of next gate)
+                lin_vel,      # 3 dim (linear vel in body frame)
+                rot_mat,      # 9 dim (drone rotation matrix)
+                corners_curr, # 12 dim (corners of current gate)
+                corners_next, # 12 dim (corners of next gate)
             ],
             dim=-1,
         )
