@@ -410,7 +410,6 @@ class DefaultQuadcopterStrategy:
         # Reset action buffers
         self.env._actions[env_ids] = 0.0
         self.env._previous_actions[env_ids] = 0.0
-        self.env._action_delay_buffer[:, env_ids, :] = 0.0
         self.env._previous_yaw[env_ids] = 0.0
         self.env._motor_speeds[env_ids] = 0.0
         self.env._previous_omega_meas[env_ids] = 0.0
