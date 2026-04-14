@@ -329,24 +329,12 @@ class DefaultQuadcopterStrategy:
         quat_w = self.env._robot.data.root_quat_w
         attitude_mat = matrix_from_quat(quat_w)
 
-        lin_vel = self.env._robot.data.root_com_lin_vel_b
-        rot_mat = attitude_mat.view(attitude_mat.shape[0], -1)
-        corners_curr = waypoint_pos_b_curr.view(waypoint_pos_b_curr.shape[0], -1)
-        corners_next = waypoint_pos_b_next.view(waypoint_pos_b_next.shape[0], -1)
-
-        if self.cfg.is_train:
-            # Observation noise to bridge sim-to-real sensor gap
-            lin_vel    = lin_vel    + torch.randn_like(lin_vel)    * 0.05   # Vicon velocity: ~5 cm/s std
-            rot_mat    = rot_mat    + torch.randn_like(rot_mat)    * 0.01   # Vicon orientation: ~0.6 deg std
-            corners_curr = corners_curr + torch.randn_like(corners_curr) * 0.03  # Gate corners: ~3 cm std
-            corners_next = corners_next + torch.randn_like(corners_next) * 0.03
-
         obs = torch.cat(
             [
-                lin_vel,      # 3 dim (linear vel in body frame)
-                rot_mat,      # 9 dim (drone rotation matrix)
-                corners_curr, # 12 dim (corners of current gate)
-                corners_next, # 12 dim (corners of next gate)
+                self.env._robot.data.root_com_lin_vel_b,			# 3 dim (linear vel in body frame)
+                attitude_mat.view(attitude_mat.shape[0], -1),			# 9 dim (drone rotation matrix)
+                waypoint_pos_b_curr.view(waypoint_pos_b_curr.shape[0], -1),	# 12 dim (corners of current gate)
+                waypoint_pos_b_next.view(waypoint_pos_b_next.shape[0], -1),	# 12 dim (corners of next gate)
             ],
             dim=-1,
         )
@@ -455,7 +443,7 @@ class DefaultQuadcopterStrategy:
                 pool = [0]
             else:
                 pool = list(range(self.env._waypoints.shape[0]))
-                if it > 1000:
+                if it > 5000:
                     domain_randomization = True
         
         pool_tensor = torch.tensor(pool, device=self.device, dtype=self.env._idx_wp.dtype)
@@ -616,36 +604,36 @@ class DefaultQuadcopterStrategy:
             print(f"Starting domain randomization at iteration {iteration} on envs {env_ids.cpu().numpy()}")
 
         if (iteration > 1000):
-            # TWR +-15% — accounts for battery level, propeller wear, motor variance
-            twr = cfg.thrust_to_weight * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
+            # TWR +-5%
+            twr = cfg.thrust_to_weight * torch.empty(n, device=self.device).uniform_(0.95, 1.05)
             self.env._thrust_to_weight[env_ids] = twr
-
+        
         if (iteration > 1500):
             # Aerodynamics: 50%-200%
             k_xy = cfg.k_aero_xy * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
             k_z = cfg.k_aero_z * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
             self.env._K_aero[env_ids, :2] = k_xy.unsqueeze(1)
             self.env._K_aero[env_ids, 2] = k_z
-
+        
         if (iteration > 2000):
-            # PID gains - roll/pitch: +-15% (kd tightened from +-30% to avoid instability with action delay)
+            # PID gains - roll/pitch: +-15%
             kp_rp = cfg.kp_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
             ki_rp = cfg.ki_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
-            kd_rp = cfg.kd_omega_rp * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
+            kd_rp = cfg.kd_omega_rp * torch.empty(n, device=self.device).uniform_(0.7, 1.3)
             self.env._kp_omega[env_ids, :2] = kp_rp.unsqueeze(1)
             self.env._ki_omega[env_ids, :2] = ki_rp.unsqueeze(1)
             self.env._kd_omega[env_ids, :2] = kd_rp.unsqueeze(1)
 
         if iteration > 2500:
+
             # PID gains - yaw: +-15%
             kp_y = cfg.kp_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
             ki_y = cfg.ki_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
-            kd_y = cfg.kd_omega_y * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
+            kd_y = cfg.kd_omega_y * torch.empty(n, device=self.device).uniform_(0.7, 1.3)
             self.env._kp_omega[env_ids, 2] = kp_y
             self.env._ki_omega[env_ids, 2] = ki_y
             self.env._kd_omega[env_ids, 2] = kd_y
 
-        if iteration > 3000:
-            # Motor time constant +-20% — spin-up speed varies between units
-            tau = cfg.tau_m * torch.empty(n, device=self.device).uniform_(0.8, 1.2)
-            self.env._tau_m[env_ids] = tau.unsqueeze(1).expand(-1, 4)
+        # if iteration > 7000:
+        #     # Motor time constant: keep fixed (no spec given)
+        #     self.env._tau_m[env_ids] = cfg.tau_m

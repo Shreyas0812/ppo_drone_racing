@@ -629,17 +629,7 @@ class QuadcopterEnv(DirectRLEnv):
     ##########################################################
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        incoming = actions.clone().clamp(-1.0, 1.0)
-
-        if self.cfg.is_train:
-            # Shift buffer: index 0 = oldest (applied), index -1 = newest (just received)
-            delayed_action = self._action_delay_buffer[0].clone()
-            self._action_delay_buffer = torch.roll(self._action_delay_buffer, shifts=-1, dims=0)
-            self._action_delay_buffer[-1] = incoming
-            self._actions = delayed_action
-        else:
-            self._actions = incoming
-
+        self._actions = actions.clone().clamp(-1.0, 1.0)    # actions come directly from the NN
         self._actions = self.cfg.beta * self._actions + (1 - self.cfg.beta) * self._previous_actions
 
         # Store current actions for next timestep (for action smoothing and observations)
