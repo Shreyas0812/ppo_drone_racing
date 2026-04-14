@@ -431,8 +431,8 @@ class DefaultQuadcopterStrategy:
                 # Gate 3 at 50%
                 pool = [0, 3]
             elif it < 2500:
-                # All gates including 1 and 2
-                pool = [0, 1, 3]
+                # Add gate 2 — upward arc entry into gate 3
+                pool = [0, 1, 2, 3]
             else:
                 # All gates
                 pool = list(range(self.env._waypoints.shape[0]))
