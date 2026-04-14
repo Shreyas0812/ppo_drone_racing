@@ -223,8 +223,8 @@ class DefaultQuadcopterStrategy:
             withdraw_x = (x_drone_wrt_gate <= 0).float()
 
             # Threshold at 0.5m above gate center = gate top (gate_side=1.0m, so top is at z_drone_wrt_gate=0.5)
-            approach_z = (z_drone_wrt_gate > 0.6).float()
-            withdraw_z = (z_drone_wrt_gate <= 0.6).float()
+            approach_z = (z_drone_wrt_gate > 0.71).float()
+            withdraw_z = (z_drone_wrt_gate <= 0.71).float()
 
             newly_entered_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
