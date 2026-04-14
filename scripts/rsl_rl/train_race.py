@@ -141,8 +141,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     }
 
     if env_cfg.track_name == 'powerloop':
-        powerloop_p2_entry_reward_scale = 0.5     # One-time bonus for first p2 entry (climb + arc signal)
-        powerloop_sequence_reward_scale = 6.0     # One-shot bonus for completing p1→p2→p3 sequence
+        powerloop_p2_entry_reward_scale = 2.0     # One-time bonus for first p2 entry (= passing_gate)
+        powerloop_sequence_reward_scale = 5.0     # One-shot bonus for completing p1→p2→p3 sequence (= lap_complete)
         # powerloop_time_bonus_reward_scale = 100.0  # Exponential bonus for faster powerloop execution
         powerloop_time_bonus_reward_scale = 0.0
         gate3_time_penalty_reward_scale = -0.005  # Per-step cost while targeting gate 3 (prevents phase farming)
