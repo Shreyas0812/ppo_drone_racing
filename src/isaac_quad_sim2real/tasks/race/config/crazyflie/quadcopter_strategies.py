@@ -113,11 +113,11 @@ class DefaultQuadcopterStrategy:
         # gate_passed = crossed_plane & y_pass_safely & z_pass_safely & flying_through
         gate_passed = crossed_plane & y_pass_safely & z_pass_safely
         if self.is_powerloop:
-            # Gate 3 only counts if the powerloop arc was executed: drone must have been above gate
-            # height on the wrong side (Phase 2) earlier this episode. Without this, the drone can
-            # pass gate 3 via a horizontal detour and never learn the vertical loop.
+            # Gate 3 only counts if the full powerloop arc was executed: drone must have been above
+            # gate height on the correct side (Phase 3) before passing through. This prevents the
+            # drone from clipping the gate top and counting it as a pass without completing the arc.
             at_gate3 = (self.env._idx_wp == 3)
-            gate_passed = torch.where(at_gate3, gate_passed & self._visited_p2, gate_passed)
+            gate_passed = torch.where(at_gate3, gate_passed & self._visited_p3, gate_passed)
             gate3_passed = gate_passed & at_gate3  # capture before _idx_wp is incremented
 
         # Wrong-side crossing: drone flew through the gate opening in reverse
@@ -223,8 +223,8 @@ class DefaultQuadcopterStrategy:
             withdraw_x = (x_drone_wrt_gate <= 0).float()
 
             # Threshold at 0.5m above gate center = gate top (gate_side=1.0m, so top is at z_drone_wrt_gate=0.5)
-            approach_z = (z_drone_wrt_gate > 0.71).float()
-            withdraw_z = (z_drone_wrt_gate <= 0.71).float()
+            approach_z = (z_drone_wrt_gate > 0.6).float()
+            withdraw_z = (z_drone_wrt_gate <= 0.6).float()
 
             newly_entered_p2 = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
