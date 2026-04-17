@@ -329,9 +329,13 @@ class DefaultQuadcopterStrategy:
         quat_w = self.env._robot.data.root_quat_w
         attitude_mat = matrix_from_quat(quat_w)
 
+        lin_vel_b = self.env._robot.data.root_com_lin_vel_b
+        if self.cfg.is_train:
+            lin_vel_b = lin_vel_b + torch.randn_like(lin_vel_b) * 0.05
+
         obs = torch.cat(
             [
-                self.env._robot.data.root_com_lin_vel_b,			# 3 dim (linear vel in body frame)
+                lin_vel_b,						# 3 dim (linear vel in body frame)
                 attitude_mat.view(attitude_mat.shape[0], -1),			# 9 dim (drone rotation matrix)
                 waypoint_pos_b_curr.view(waypoint_pos_b_curr.shape[0], -1),	# 12 dim (corners of current gate)
                 waypoint_pos_b_next.view(waypoint_pos_b_next.shape[0], -1),	# 12 dim (corners of next gate)
@@ -605,14 +609,14 @@ class DefaultQuadcopterStrategy:
             print(f"Starting domain randomization at iteration {iteration} on envs {env_ids.cpu().numpy()}")
 
         if (iteration > 1000):
-            # TWR +-5%
-            twr = cfg.thrust_to_weight * torch.empty(n, device=self.device).uniform_(0.95, 1.05)
+            # TWR +-15% (covers battery discharge and motor variance across a real flight session)
+            twr = cfg.thrust_to_weight * torch.empty(n, device=self.device).uniform_(0.85, 1.15)
             self.env._thrust_to_weight[env_ids] = twr
-        
+
         if (iteration > 1500):
-            # Aerodynamics: 50%-200%
-            k_xy = cfg.k_aero_xy * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
-            k_z = cfg.k_aero_z * torch.empty(n, device=self.device).uniform_(0.5, 2.0)
+            # Aerodynamics: 70%-150% (narrowed from 50%-200% to reduce policy bumpiness)
+            k_xy = cfg.k_aero_xy * torch.empty(n, device=self.device).uniform_(0.7, 1.5)
+            k_z = cfg.k_aero_z * torch.empty(n, device=self.device).uniform_(0.7, 1.5)
             self.env._K_aero[env_ids, :2] = k_xy.unsqueeze(1)
             self.env._K_aero[env_ids, 2] = k_z
         
