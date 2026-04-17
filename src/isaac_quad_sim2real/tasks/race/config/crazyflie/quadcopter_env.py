@@ -660,6 +660,12 @@ class QuadcopterEnv(DirectRLEnv):
         self._thrust[:, 0, 2] += wrench[:, 0]
         self._moment[:, 0, :] = wrench[:, 1:]
 
+        if self.cfg.is_train:
+            # Random force disturbances to simulate prop wash, turbulence, ground effect.
+            # Crazyflie hover thrust ~0.27N; 0.02N std is ~7% of hover — noticeable but not destabilizing.
+            self._thrust[:, 0, :] += torch.randn(self.num_envs, 3, device=self.device) * 0.02
+            self._moment[:, 0, :] += torch.randn(self.num_envs, 3, device=self.device) * 0.002
+
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
