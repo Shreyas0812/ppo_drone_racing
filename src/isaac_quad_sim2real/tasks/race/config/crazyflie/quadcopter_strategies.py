@@ -71,6 +71,9 @@ class DefaultQuadcopterStrategy:
         # self._powerloop_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._lap_start_time = torch.zeros(self.num_envs, device=self.device)
 
+        if self.cfg.is_train:
+            self._waypoint_offsets = torch.zeros(self.num_envs, env._waypoints.shape[0], 3, device=self.device)
+
         self.is_powerloop = (self.cfg.track_name == 'powerloop')
         if self.is_powerloop:
             self._powerloop_start_time = torch.zeros(self.num_envs, device=self.device)
@@ -303,6 +306,10 @@ class DefaultQuadcopterStrategy:
 
         wp_curr_pos = self.env._waypoints[curr_idx, :3]
         wp_next_pos = self.env._waypoints[next_idx, :3]
+        if self.cfg.is_train:
+            arange = torch.arange(self.num_envs, device=self.device)
+            wp_curr_pos = wp_curr_pos + self._waypoint_offsets[arange, curr_idx]
+            wp_next_pos = wp_next_pos + self._waypoint_offsets[arange, next_idx]
         quat_curr = self.env._waypoints_quat[curr_idx]
         quat_next = self.env._waypoints_quat[next_idx]
 
@@ -588,6 +595,11 @@ class DefaultQuadcopterStrategy:
             self._visited_p2[env_ids] = False
             self._visited_p3[env_ids] = False
             self._powerloop_done_this_lap[env_ids] = False
+
+        if self.cfg.is_train:
+            self._waypoint_offsets[env_ids] = torch.randn(
+                len(env_ids), self.env._waypoints.shape[0], 3, device=self.device
+            ) * 0.05
 
         # Domain randomization: enabled after 5500 iterations
         if domain_randomization:
