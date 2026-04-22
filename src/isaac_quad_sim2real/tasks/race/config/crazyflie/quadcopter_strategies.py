@@ -596,7 +596,7 @@ class DefaultQuadcopterStrategy:
             self._visited_p3[env_ids] = False
             self._powerloop_done_this_lap[env_ids] = False
 
-        if self.cfg.is_train:
+        if self.cfg.is_train and domain_randomization:
             self._waypoint_offsets[env_ids] = torch.randn(
                 len(env_ids), self.env._waypoints.shape[0], 3, device=self.device
             ) * 0.05
