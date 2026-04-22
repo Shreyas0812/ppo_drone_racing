@@ -122,9 +122,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     passing_gate_reward_scale = 2.0
     lap_complete_reward_scale = 5.0
     wrong_way_gate_reward = -2.5
-    # lap_time_bonus_reward_scale = 200.0  # Speed bonus on top of flat lap_complete reward
     lap_time_bonus_reward_scale = 0.0
-    progress_goal_reward_scale = 0.05  # Small shaping to stabilize critic — not enough to exploit sim dynamics
+    progress_goal_reward_scale = 0.02  # Small shaping to stabilize critic — not enough to exploit sim dynamics
     crash_reward = -0.6
     death_cost = -2.0
 
