@@ -133,7 +133,7 @@ class DefaultQuadcopterStrategy:
 
         # Centering bonus: scale gate reward by how close to center the drone passed (Gaussian, sigma=0.2m)
         # Pure sparse signal — only nonzero when gate_passed. Stays at 1.0 for perfect center, ~0.01 at 0.4m offset.
-        gate_centering = torch.exp(-(y_drone_wrt_gate**2 + z_drone_wrt_gate**2) / (2 * 0.2**2))
+        gate_centering = torch.exp(-(y_drone_wrt_gate**2 + z_drone_wrt_gate**2) / (2 * 0.3**2))
 
         ids_gate_passed = torch.where(gate_passed)[0]
         self.env._idx_wp[ids_gate_passed] = (self.env._idx_wp[ids_gate_passed] + 1) % self.env._waypoints.shape[0]
